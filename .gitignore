@@ -1,0 +1,5 @@
+node_modules
+build/
+tpl-decoration/
+*.log
+evidence/

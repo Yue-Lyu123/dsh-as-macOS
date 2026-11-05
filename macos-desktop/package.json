@@ -1,0 +1,59 @@
+{
+  "name": "dsh-macos-desktop",
+  "version": "1.0.0",
+  "description": "Agent OS for DeepSeek Harness: a macOS desktop in the Web GUI — real Chromium browser, editable Univer, Obsidian notes, Finder, terminal, all agent-drivable.",
+  "license": "MIT",
+  "author": "Yue-Lyu123",
+  "homepage": "https://github.com/Yue-Lyu123/dsh-as-macOS#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yue-Lyu123/dsh-as-macOS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yue-Lyu123/dsh-as-macOS/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "macos",
+    "desktop",
+    "dock",
+    "window-manager",
+    "agent-os",
+    "browser",
+    "univer"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./macos.css": "./macos.css"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "docs/*.jpg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ]
+    }
+  }
+}

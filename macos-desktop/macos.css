@@ -1,0 +1,1951 @@
+/* macOS desktop shell for the Harness Web GUI.
+
+   Layers (bottom → top):
+     1. native shell, parked off-screen while the desktop runs
+     2. .macos-desktop (React tree re-parented into a body-level host)
+     3. [data-sidebar-right-session] — ego-lite's own panel, floated under the
+        browser window's content rect
+     4. 废纸篓 window
+   The menubar and the Dock are drawn twice: once inside the desktop layer and
+   once (as thin, clickable strips) above the floated panel, because the panel
+   paints over everything inside the desktop layer. */
+
+.macos-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+}
+.macos-desktop-host {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* the host is parented to the parked native frame: undo its offset */
+html[data-macos-desktop] .macos-desktop-host { transform: none !important; }
+html[data-macos-desktop] .macos-desktop { transform: none !important; }
+.macos-desktop-host > * { pointer-events: auto; }
+.macos-desktop {
+  --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --mac-menubar-h: 25px;
+  --mac-dock-h: 74px;
+  /* macOS text ramp: labelColor / secondaryLabelColor, and the SF Mono stack Apple uses */
+  --mac-label: #1d1d1f;
+  --mac-label-2: rgba(60, 60, 67, 0.6);
+  --mac-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  font-family: var(--mac-font);
+  color: #1d1d1f;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+}
+.macos-desktop.dark {
+  --mac-label: #f5f5f7;
+  --mac-label-2: rgba(235, 235, 245, 0.6); color: #f5f5f7; }
+
+/* ---------- wallpaper ---------- */
+.macos-wallpaper {
+  position: absolute;
+  inset: 0;
+  background-color: #b9a7f2;
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+.macos-wallpaper-tint {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 120%, rgba(255, 255, 255, 0.10), transparent 60%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.02));
+  pointer-events: none;
+}
+
+/* ---------- desktop icons ---------- */
+.macos-desktop-area {
+  position: absolute;
+  top: calc(var(--mac-menubar-h) + 14px);
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--mac-dock-h) + 16px);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, 100px);
+  grid-auto-columns: 100px;
+  gap: 4px;
+  align-content: start;
+  justify-content: start;
+  align-items: start;
+}
+.macos-icon-cell {
+  position: relative;
+  width: 100px;
+  height: 98px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-radius: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.macos-icon-cell.selected {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.macos-desktop.dark .macos-icon-cell.selected { background: rgba(255, 255, 255, 0.16); }
+.macos-icon-img {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+}
+.macos-icon-img svg { width: 64px; height: 64px; display: block; }
+.macos-icon-label {
+  max-width: 92px;
+  padding: 1px 5px 2px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 15px;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.macos-icon-cell.selected .macos-icon-label { background: #0a68ff; text-shadow: none; }
+.macos-icon-cell-dot {
+  position: absolute;
+  bottom: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+.macos-icon-cell-dot.on { background: rgba(255, 255, 255, 0.85); }
+
+/* ---------- menubar ---------- */
+.macos-menubar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mac-menubar-h);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 0 8px;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: inset 0 -0.5px 0 rgba(0, 0, 0, 0.14);
+  z-index: 60;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.macos-menu-item {
+  display: flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #fff;
+  cursor: default;
+  white-space: nowrap;
+  text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.25);
+}
+.macos-menu-item:hover, .macos-menu-item.open { background: rgba(255, 255, 255, 0.26); }
+.macos-menu-item.appname { font-weight: 700; }
+.macos-menu-item.apple { padding: 0 9px; }
+.macos-menu-item.apple svg { width: 15px; height: 15px; display: block; fill: #fff; }
+.macos-menubar-spacer { flex: 1; }
+.macos-status { display: flex; align-items: center; gap: 2px; }
+.macos-status-ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 19px;
+  border-radius: 5px;
+}
+.macos-status-ic:hover { background: rgba(255, 255, 255, 0.26); }
+.macos-status-ic svg { width: 17px; height: 17px; display: block; fill: #fff; }
+.macos-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: #fff;
+  text-shadow: none;
+}
+.macos-status-badge:hover { background: rgba(255, 255, 255, 0.26); }
+.macos-dot { width: 6px; height: 6px; border-radius: 50%; background: #34c759; box-shadow: 0 0 4px rgba(52, 199, 89, 0.7); }
+.macos-dot.warn { background: #ff9f0a; box-shadow: 0 0 4px rgba(255, 159, 10, 0.7); }
+.macos-date { padding: 0 6px; font-size: 13px; }
+.macos-clock { padding: 0 7px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.macos-menubar-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mac-menubar-h, 25px);
+  z-index: 2147483200;
+  pointer-events: none;
+}
+.macos-menubar-strip > .macos-menubar { position: absolute; }
+
+/* dropdown menus */
+.macos-menubar > .macos-menu,
+.macos-menu {
+  position: fixed;
+  top: calc(var(--mac-menubar-h) - 1px);
+  pointer-events: auto;
+  z-index: 2147483201;
+  min-width: 218px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgba(246, 246, 248, 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(28px);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 12px 32px rgba(0, 0, 0, 0.26);
+  color: #1d1d1f;
+}
+.macos-desktop.dark .macos-menu { background: rgba(44, 44, 48, 0.86); color: #f5f5f7; }
+.macos-menu.anchor-left { left: 6px; }
+.macos-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.macos-menu-row:hover { background: #0a68ff; color: #fff; }
+.macos-menu-hint { font-size: 12px; opacity: 0.6; }
+.macos-menu-sep { height: 1px; margin: 4px 9px; background: rgba(0, 0, 0, 0.12); }
+.macos-desktop.dark .macos-menu-sep { background: rgba(255, 255, 255, 0.14); }
+
+/* ---------- windows ---------- */
+.macos-windows {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+.macos-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22), 0 18px 48px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.14);
+  pointer-events: auto;
+  transform-origin: center bottom;
+  animation: macos-win-open 220ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+.macos-window.dark { background: #202124; }
+.macos-window.blurred { box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 10px 30px rgba(0, 0, 0, 0.2); }
+.macos-window.zoomed { border-radius: 0; }
+@keyframes macos-win-open { from { opacity: 0; transform: scale(0.96) translateY(10px); } to { opacity: 1; transform: none; } }
+.macos-window-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+/* the browser body is a see-through hole: ego-lite's own panel is floated over this window */
+.macos-window-body.ego { background: transparent; }
+.macos-ego-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.macos-ego-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.macos-ego-pane > [data-slot] { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.macos-ego-pane [class*="ego-side-root"] { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.macos-titlebar {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: linear-gradient(180deg, #f7f7f8, #ececee);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.14);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.macos-window.dark .macos-titlebar { background: linear-gradient(180deg, #3a3a3e, #303034); border-bottom-color: rgba(0, 0, 0, 0.5); }
+.macos-lights { display: flex; align-items: center; gap: 8px; flex: none; }
+.macos-light {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: filter 120ms;
+}
+.macos-light svg { width: 7px; height: 7px; opacity: 0; fill: rgba(0, 0, 0, 0.55); }
+.macos-lights:hover .macos-light svg { opacity: 1; }
+.macos-light.close { background: #ff5f57; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14); }
+.macos-light.min { background: #febc2e; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14); }
+.macos-light.zoom { background: #28c840; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14); }
+.macos-window.blurred .macos-light { background: #d4d4d6; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.1); }
+.macos-window.blurred .macos-light svg { display: none; }
+.macos-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: -44px;
+  padding-left: 44px;
+  pointer-events: none;
+}
+.macos-window.dark .macos-title { color: rgba(255, 255, 255, 0.82); }
+.macos-titlebar-right { display: flex; align-items: center; gap: 6px; flex: none; }
+.macos-tb-btn {
+  height: 21px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.72);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+}
+.macos-tb-btn:hover { background: rgba(0, 0, 0, 0.12); }
+.macos-window.dark .macos-tb-btn { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.85); }
+
+.macos-resize { position: absolute; z-index: 3; }
+.macos-resize[data-edge="n"] { top: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.macos-resize[data-edge="s"] { bottom: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.macos-resize[data-edge="w"] { left: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.macos-resize[data-edge="e"] { right: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.macos-resize[data-edge="nw"] { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.macos-resize[data-edge="ne"] { top: -4px; right: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.macos-resize[data-edge="sw"] { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.macos-resize[data-edge="se"] { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.macos-window.zoomed .macos-resize { display: none; }
+
+/* browser window body — the native ego panel shows through this hole */
+.macos-ego-host { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #fff; }
+.macos-chat-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: inset 0 0.5px 0 rgba(0, 0, 0, 0.06);
+}
+.macos-window.dark .macos-chat-host { background: #202124; }
+.macos-window.dark .macos-ego-host { background: #202124; }
+.macos-ego-wait {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: #6b6b70;
+  background: #fff;
+}
+.macos-ego-wait-title { font-size: 13.5px; font-weight: 600; color: #2b2b2f; }
+.macos-ego-wait-sub { font-size: 12px; max-width: 440px; line-height: 1.6; }
+.macos-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  border-top-color: #0a84ff;
+  animation: macos-spin 800ms linear infinite;
+}
+@keyframes macos-spin { to { transform: rotate(360deg); } }
+
+/* 废纸篓 window */
+.macos-trash-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  background: #fff;
+}
+.macos-window.dark .macos-trash-body { background: #26262a; color: rgba(255, 255, 255, 0.6); }
+.macos-trash-body .macos-icon-img { width: 84px; height: 84px; opacity: 0.9; }
+.macos-trash-body .macos-icon-img svg { width: 84px; height: 84px; }
+
+/* ---------- dock ---------- */
+.macos-dock-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--mac-dock-h);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  z-index: 65;
+  pointer-events: none;
+}
+/* floating copies ride in the shell frame's overlay, which sits inside the parked frame */
+html[data-macos-desktop] .macos-overlay-root { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+html[data-macos-desktop] .macos-overlay-root > * { pointer-events: auto; }
+html[data-macos-desktop] .macos-overlay-root .macos-menubar-strip { position: fixed; top: 0; left: 0; right: 0; z-index: 2147483200; }
+html[data-macos-desktop] .macos-overlay-root .macos-dock-layer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483199; }
+.macos-dock {
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  height: 58px;
+  padding: 5px 7px 6px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.34);
+  -webkit-backdrop-filter: saturate(180%) blur(26px);
+  backdrop-filter: saturate(180%) blur(26px);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.4), 0 8px 26px rgba(0, 0, 0, 0.28), inset 0 0.5px 0 rgba(255, 255, 255, 0.55);
+  pointer-events: auto;
+}
+.macos-desktop.dark .macos-dock { background: rgba(60, 60, 66, 0.42); }
+.macos-dock-item {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 11px;
+  cursor: default;
+  transition: transform 120ms ease-out;
+}
+.macos-dock-item .dock-icon { width: 46px; height: 46px; display: flex; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.26)); }
+.macos-dock-item .dock-icon svg { width: 46px; height: 46px; display: block; }
+.macos-dock-item.hover { transform: scale(1.28) translateY(-6px); }
+.macos-dock-item.hover-adj { transform: scale(1.12) translateY(-2px); }
+.macos-dock-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px 3px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #fff;
+  white-space: nowrap;
+  background: rgba(34, 34, 38, 0.82);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 3;
+}
+.macos-dock-running {
+  position: absolute;
+  bottom: -6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+.macos-dock-running.on { background: rgba(0, 0, 0, 0.45); }
+.macos-desktop.dark .macos-dock-running.on { background: rgba(255, 255, 255, 0.7); }
+.macos-dock-sep { width: 1px; height: 38px; margin: 0 3px; background: rgba(0, 0, 0, 0.16); align-self: center; }
+
+/* ---------- native plugin panel, floated as an app window's content ----------
+   The right-bar panel is real, interactive DOM. A "software" window is chrome around it: the
+   panel is positioned exactly over that window's body rect, so Monaco / Univer / ego keep working.
+   With no app using it the panel is clipped into a corner — still laid out (that keeps ego
+   streaming) but invisible and unclickable. */
+/* A native plugin panel is only the CONTENT of a window whose body is a hole; for every other
+   window (inactive, hole-less, or while the desktop is merely on) it must be out of the way.
+   `display:none` is what the runtime honours: ego pauses its own capture while its panel is not
+   displayed, which is exactly what this desktop wants when no app is showing it. */
+html[data-macos-desktop] [data-macos-panel="parked"] [data-sidebar-right-panel] {
+  display: none !important;
+}
+html[data-macos-desktop] [data-sidebar-right-panel] {
+  /* a fixed popover: `inset:auto` first, or the popover UA style (inset:0, margin:auto) wins */
+  position: fixed !important;
+  inset: auto !important;
+  margin: 0 !important;
+  top: var(--mac-y, 0px) !important;
+  left: var(--mac-x, 0px) !important;
+  width: var(--mac-w, 100vw) !important;
+  height: calc(var(--mac-h, 100vh) - 40px) !important;
+  max-width: none !important;
+  max-height: none !important;
+  /* below the window chrome: window content sits at 520, the titlebar and the floating assistant
+     of the same window must stay above it, so the panel stops one layer short */
+  z-index: 510 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  background: #fff !important;
+  border: 0 !important;
+  border-radius: 0 0 10px 10px !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+html[data-macos-desktop][data-macos-panel="parked"] [data-sidebar-right-panel] {
+  clip-path: inset(0 0 100% 100%) !important;
+  pointer-events: none !important;
+}
+/* the panel is one app surface now, so its own tab strip is redundant */
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-host="tabstrip"] { display: none !important; }
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-host="dock"],
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-pane] {
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+/* the session wrapper is display:contents — leave it alone */
+html[data-macos-desktop] [data-sidebar-right-session] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+/* minimized / unfocused windows are see-through: their window shows the page underneath */
+html[data-macos-desktop] {
+  --mac-card-bg: rgba(252, 252, 253, 0.66);
+  --mac-card-blur: saturate(180%) blur(24px);
+  --mac-titlebar-bg: rgba(247, 247, 248, 0.72);
+  --mac-win-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 18px 50px rgba(0, 0, 0, 0.26), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+html[data-macos-desktop] .macos-desktop.dark {
+  --mac-card-bg: rgba(38, 38, 42, 0.72);
+  --mac-titlebar-bg: rgba(48, 48, 52, 0.72);
+  --mac-win-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 20px 54px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+html[data-macos-desktop] .macos-window {
+  background: var(--mac-card-bg);
+  -webkit-backdrop-filter: var(--mac-card-blur);
+  backdrop-filter: var(--mac-card-blur);
+  box-shadow: var(--mac-win-shadow);
+  border-radius: 12px;
+  isolation: isolate;
+}
+/* the page of a browser / editor window is opaque; the chrome above and below it stays glass */
+html[data-macos-desktop] .macos-window .macos-window-body { background: transparent; }
+html[data-macos-desktop] .macos-titlebar {
+  background: var(--mac-titlebar-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px 12px 0 0;
+}
+html[data-macos-desktop] .macos-window.dark .macos-titlebar { border-bottom-color: rgba(255, 255, 255, 0.1); }
+html[data-macos-desktop] .macos-window-body { background: transparent; }
+
+
+/* ---------- floating chrome above the ego panel ---------- */
+html[data-macos-desktop] .macos-root { position: fixed !important; inset: 0 !important; z-index: 30 !important; }
+/* The ego panel is a pure carrier while the desktop runs: ego's capture follows the *visible*
+   viewport, so a parked panel at 0,0 would re-capture the desktop itself. It keeps a sub-pixel box
+   inside the viewport (a display:none / off-screen box pauses ego's stream), stays transparent,
+   and nothing of it is clickable. */
+/* the ego pane rendered into our window takes ego's own sizing back to full height */
+html[data-macos-desktop] .macos-ego-host [data-slot="sidebar.right.pane.tab"],
+html[data-macos-desktop] .macos-ego-host [class*="ego-side-root"] { height: 100%; min-height: 0; }
+html[data-macos-desktop] .macos-ego-host { display: flex; flex-direction: column; }
+html[data-macos-desktop] .macos-ego-host [class*="ego-side-liveimg"] { max-height: none; object-fit: contain; }
+
+/* ego's view render target: the floated panel paints its content over the browser window body */
+html[data-macos-desktop] .macos-ego-holder,
+.macos-ego-holder.macos-ego-echo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1100px;
+  height: 720px;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+/* ego keeps drawing its own sidebar chrome; once the pane lives in the window, the page fills it */
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-head"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-pageinfo"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-tabs"],
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-statusline"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebadge"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-body"] { border: 0 !important; border-radius: 0 !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-root"] { height: 100% !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-body"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: auto !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+/* ego caps its frame at 50vh for a sidebar tab and keeps the real pixels in overlay layers;
+   a window shows the page edge to edge, so the black stage goes away entirely */
+html[data-macos-desktop] .macos-ego-host { overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane { flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [data-slot] { flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  overflow: clip !important;
+  background: #fff !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebox"] {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  aspect-ratio: auto !important;
+  background: #fff !important;
+  border-radius: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveimg"] {
+  height: 100% !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] { border-radius: 0 !important; }
+/* the swapped overlay buffers must cover the box: only the semantic frame may letterbox */
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebuf"] {
+  position: absolute !important;
+  z-index: 0 !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: top center !important;
+  border: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebadge"],
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-actionline"] { display: none !important; }
+/* the live frame is painted by ego itself, so the window keeps only its chrome */
+html[data-macos-desktop] .macos-window-body.ego { background: #fff; }
+/* while the pane is still inside the floated panel it paints nothing: the window owns it */
+html[data-macos-desktop] .macos-ego-pane { display: flex !important; flex-direction: column; background: #fff; }
+/* the native ego tab body stays parked: only the desktop layer is visible */
+html[data-macos-desktop] .macos-ego-wait { background: #fff; }
+/* the page itself is clicked through the window body: only the chrome takes the pointer */
+html[data-macos-desktop] .macos-ego-host { pointer-events: none !important; }
+/* the browser window is a frame around ego's pane; it must never paint over it */
+html[data-macos-desktop] .macos-ego-host .macos-window,
+html[data-macos-desktop] .macos-ego-host .macos-desktop,
+html[data-macos-desktop] .macos-ego-host .macos-ego-pane { background: #fff !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+html[data-macos-desktop] [data-macos-chrome],
+html[data-macos-desktop] [data-macos-chrome] * { pointer-events: auto !important; }
+
+/* ---------- sheets ---------- */
+.macos-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 80;
+  animation: macos-fade 160ms ease-out;
+}
+@keyframes macos-fade { from { opacity: 0; } to { opacity: 1; } }
+.macos-sheet {
+  width: 320px;
+  padding: 22px 20px 16px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  background: rgba(248, 248, 250, 0.94);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(28px);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 24px 60px rgba(0, 0, 0, 0.34);
+  color: #1d1d1f;
+  animation: macos-sheet-in 200ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+@keyframes macos-sheet-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+.macos-desktop.dark .macos-sheet { background: rgba(44, 44, 48, 0.94); color: #f5f5f7; }
+.macos-chat-logo { width: 64px; height: 64px; display: flex; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
+.macos-chat-logo svg { width: 64px; height: 64px; }
+.macos-sheet-title { font-size: 17px; font-weight: 700; margin-top: 2px; }
+.macos-sheet-sub { font-size: 12px; opacity: 0.62; }
+.macos-sheet-meta { font-size: 11.5px; opacity: 0.55; }
+.macos-sheet-actions { display: flex; gap: 10px; margin-top: 12px; width: 100%; }
+.macos-btn {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  cursor: default;
+  background: rgba(0, 0, 0, 0.07);
+  color: inherit;
+}
+.macos-btn:hover { background: rgba(0, 0, 0, 0.12); }
+.macos-btn.primary { background: #0a84ff; color: #fff; }
+.macos-btn.primary:hover { background: #0a7cf2; }
+
+/* entry capsule shown in the native GUI: a thin glass pill, the way macOS floats
+   system chrome (no label, no drop shadow ring - it rests on the wallpaper) */
+.macos-launch {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  height: 26px;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(20, 20, 22, 0.82);
+  cursor: default;
+  pointer-events: auto;
+  z-index: 2147483000;
+  background: rgba(255, 255, 255, 0.42);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.08), inset 0 0.5px 0 rgba(255, 255, 255, 0.55);
+  transition: width 160ms ease, background 160ms ease;
+}
+.macos-launch:hover { width: 84px; background: rgba(255, 255, 255, 0.66); }
+.macos-launch-ic { display: flex; align-items: center; justify-content: center; }
+.macos-launch-ic svg { width: 14px; height: 14px; display: block; }
+.macos-launch-txt {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 590;
+  letter-spacing: 0.01em;
+  transition: max-width 160ms ease, opacity 160ms ease, margin 160ms ease;
+}
+.macos-launch:hover .macos-launch-txt { max-width: 48px; opacity: 1; margin-left: 5px; }
+.macos-desktop.dark ~ .macos-launch { color: rgba(245, 245, 247, 0.9); }
+.macos-overlay-root { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+html[data-macos-desktop] .macos-overlay-root > * { pointer-events: auto; }
+html[data-macos-desktop] .macos-overlay-root .macos-menubar-strip { position: fixed; top: 0; left: 0; right: 0; z-index: 2147483200; }
+html[data-macos-desktop] .macos-overlay-root .macos-dock-layer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483199; }
+.macos-dock {
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  height: 58px;
+  padding: 5px 7px 6px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.34);
+  -webkit-backdrop-filter: saturate(180%) blur(26px);
+  backdrop-filter: saturate(180%) blur(26px);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.4), 0 8px 26px rgba(0, 0, 0, 0.28), inset 0 0.5px 0 rgba(255, 255, 255, 0.55);
+  pointer-events: auto;
+}
+.macos-desktop.dark .macos-dock { background: rgba(60, 60, 66, 0.42); }
+.macos-dock-item {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 11px;
+  cursor: default;
+  transition: transform 120ms ease-out;
+}
+.macos-dock-item .dock-icon { width: 46px; height: 46px; display: flex; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.26)); }
+.macos-dock-item .dock-icon svg { width: 46px; height: 46px; display: block; }
+.macos-dock-item.hover { transform: scale(1.28) translateY(-6px); }
+.macos-dock-item.hover-adj { transform: scale(1.12) translateY(-2px); }
+.macos-dock-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px 3px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #fff;
+  white-space: nowrap;
+  background: rgba(34, 34, 38, 0.82);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 3;
+}
+.macos-dock-running {
+  position: absolute;
+  bottom: -6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+.macos-dock-running.on { background: rgba(0, 0, 0, 0.45); }
+.macos-desktop.dark .macos-dock-running.on { background: rgba(255, 255, 255, 0.7); }
+.macos-dock-sep { width: 1px; height: 38px; margin: 0 3px; background: rgba(0, 0, 0, 0.16); align-self: center; }
+
+/* ---------- native plugin panel, floated as an app window's content ----------
+   The right-bar panel is real, interactive DOM. A "software" window is chrome around it: the
+   panel is positioned exactly over that window's body rect, so Monaco / Univer / ego keep working.
+   With no app using it the panel is clipped into a corner — still laid out (that keeps ego
+   streaming) but invisible and unclickable. */
+/* A native plugin panel is only the CONTENT of a window whose body is a hole; for every other
+   window (inactive, hole-less, or while the desktop is merely on) it must be out of the way.
+   `display:none` is what the runtime honours: ego pauses its own capture while its panel is not
+   displayed, which is exactly what this desktop wants when no app is showing it. */
+html[data-macos-desktop] [data-macos-panel="parked"] [data-sidebar-right-panel] {
+  display: none !important;
+}
+html[data-macos-desktop] [data-sidebar-right-panel] {
+  /* a fixed popover: `inset:auto` first, or the popover UA style (inset:0, margin:auto) wins */
+  position: fixed !important;
+  inset: auto !important;
+  margin: 0 !important;
+  top: var(--mac-y, 0px) !important;
+  left: var(--mac-x, 0px) !important;
+  width: var(--mac-w, 100vw) !important;
+  height: calc(var(--mac-h, 100vh) - 40px) !important;
+  max-width: none !important;
+  max-height: none !important;
+  /* below the window chrome: window content sits at 520, the titlebar and the floating assistant
+     of the same window must stay above it, so the panel stops one layer short */
+  z-index: 510 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  background: #fff !important;
+  border: 0 !important;
+  border-radius: 0 0 10px 10px !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+html[data-macos-desktop][data-macos-panel="parked"] [data-sidebar-right-panel] {
+  clip-path: inset(0 0 100% 100%) !important;
+  pointer-events: none !important;
+}
+/* the panel is one app surface now, so its own tab strip is redundant */
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-host="tabstrip"] { display: none !important; }
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-host="dock"],
+html[data-macos-desktop] [data-sidebar-right-panel] [data-dockkit-pane] {
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+/* the session wrapper is display:contents — leave it alone */
+html[data-macos-desktop] [data-sidebar-right-session] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+/* minimized / unfocused windows are see-through: their window shows the page underneath */
+html[data-macos-desktop] {
+  --mac-card-bg: rgba(252, 252, 253, 0.66);
+  --mac-card-blur: saturate(180%) blur(24px);
+  --mac-titlebar-bg: rgba(247, 247, 248, 0.72);
+  --mac-win-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 18px 50px rgba(0, 0, 0, 0.26), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+html[data-macos-desktop] .macos-desktop.dark {
+  --mac-card-bg: rgba(38, 38, 42, 0.72);
+  --mac-titlebar-bg: rgba(48, 48, 52, 0.72);
+  --mac-win-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 20px 54px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+html[data-macos-desktop] .macos-window {
+  background: var(--mac-card-bg);
+  -webkit-backdrop-filter: var(--mac-card-blur);
+  backdrop-filter: var(--mac-card-blur);
+  box-shadow: var(--mac-win-shadow);
+  border-radius: 12px;
+  isolation: isolate;
+}
+/* the page of a browser / editor window is opaque; the chrome above and below it stays glass */
+html[data-macos-desktop] .macos-window .macos-window-body { background: transparent; }
+html[data-macos-desktop] .macos-titlebar {
+  background: var(--mac-titlebar-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px 12px 0 0;
+}
+html[data-macos-desktop] .macos-window.dark .macos-titlebar { border-bottom-color: rgba(255, 255, 255, 0.1); }
+html[data-macos-desktop] .macos-window-body { background: transparent; }
+
+
+/* ---------- floating chrome above the ego panel ---------- */
+html[data-macos-desktop] .macos-root { position: fixed !important; inset: 0 !important; z-index: 30 !important; }
+/* The ego panel is a pure carrier while the desktop runs: ego's capture follows the *visible*
+   viewport, so a parked panel at 0,0 would re-capture the desktop itself. It keeps a sub-pixel box
+   inside the viewport (a display:none / off-screen box pauses ego's stream), stays transparent,
+   and nothing of it is clickable. */
+/* the ego pane rendered into our window takes ego's own sizing back to full height */
+html[data-macos-desktop] .macos-ego-host [data-slot="sidebar.right.pane.tab"],
+html[data-macos-desktop] .macos-ego-host [class*="ego-side-root"] { height: 100%; min-height: 0; }
+html[data-macos-desktop] .macos-ego-host { display: flex; flex-direction: column; }
+html[data-macos-desktop] .macos-ego-host [class*="ego-side-liveimg"] { max-height: none; object-fit: contain; }
+
+/* ego's view render target: the floated panel paints its content over the browser window body */
+html[data-macos-desktop] .macos-ego-holder,
+.macos-ego-holder.macos-ego-echo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1100px;
+  height: 720px;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+/* ego keeps drawing its own sidebar chrome; once the pane lives in the window, the page fills it */
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-head"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-pageinfo"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-tabs"],
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-statusline"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebadge"] { display: none !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-body"] { border: 0 !important; border-radius: 0 !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-root"] { height: 100% !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-body"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: auto !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+/* ego caps its frame at 50vh for a sidebar tab and keeps the real pixels in overlay layers;
+   a window shows the page edge to edge, so the black stage goes away entirely */
+html[data-macos-desktop] .macos-ego-host { overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane { flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [data-slot] { flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important; }
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  overflow: clip !important;
+  background: #fff !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebox"] {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  aspect-ratio: auto !important;
+  background: #fff !important;
+  border-radius: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveimg"] {
+  height: 100% !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-liveview"] { border-radius: 0 !important; }
+/* the swapped overlay buffers must cover the box: only the semantic frame may letterbox */
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebuf"] {
+  position: absolute !important;
+  z-index: 0 !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: top center !important;
+  border: 0 !important;
+}
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-livebadge"],
+html[data-macos-desktop] .macos-ego-pane [class*="ego-side-actionline"] { display: none !important; }
+/* the live frame is painted by ego itself, so the window keeps only its chrome */
+html[data-macos-desktop] .macos-window-body.ego { background: #fff; }
+/* while the pane is still inside the floated panel it paints nothing: the window owns it */
+html[data-macos-desktop] .macos-ego-pane { display: flex !important; flex-direction: column; background: #fff; }
+/* the native ego tab body stays parked: only the desktop layer is visible */
+html[data-macos-desktop] .macos-ego-wait { background: #fff; }
+/* the page itself is clicked through the window body: only the chrome takes the pointer */
+html[data-macos-desktop] .macos-ego-host { pointer-events: none !important; }
+/* the browser window is a frame around ego's pane; it must never paint over it */
+html[data-macos-desktop] .macos-ego-host .macos-window,
+html[data-macos-desktop] .macos-ego-host .macos-desktop,
+html[data-macos-desktop] .macos-ego-host .macos-ego-pane { background: #fff !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+html[data-macos-desktop] [data-macos-chrome],
+html[data-macos-desktop] [data-macos-chrome] * { pointer-events: auto !important; }
+
+/* ---------- sheets ---------- */
+.macos-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 80;
+  animation: macos-fade 160ms ease-out;
+}
+@keyframes macos-fade { from { opacity: 0; } to { opacity: 1; } }
+.macos-sheet {
+  width: 320px;
+  padding: 22px 20px 16px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  background: rgba(248, 248, 250, 0.94);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(28px);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 24px 60px rgba(0, 0, 0, 0.34);
+  color: #1d1d1f;
+  animation: macos-sheet-in 200ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+@keyframes macos-sheet-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+.macos-desktop.dark .macos-sheet { background: rgba(44, 44, 48, 0.94); color: #f5f5f7; }
+.macos-chat-logo { width: 64px; height: 64px; display: flex; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
+.macos-chat-logo svg { width: 64px; height: 64px; }
+.macos-sheet-title { font-size: 17px; font-weight: 700; margin-top: 2px; }
+.macos-sheet-sub { font-size: 12px; opacity: 0.62; }
+.macos-sheet-meta { font-size: 11.5px; opacity: 0.55; }
+.macos-sheet-actions { display: flex; gap: 10px; margin-top: 12px; width: 100%; }
+.macos-btn {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  cursor: default;
+  background: rgba(0, 0, 0, 0.07);
+  color: inherit;
+}
+.macos-btn:hover { background: rgba(0, 0, 0, 0.12); }
+.macos-btn.primary { background: #0a84ff; color: #fff; }
+.macos-btn.primary:hover { background: #0a7cf2; }
+
+/* entry pill shown in the native GUI */
+.macos-launch {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0b0b0f;
+  cursor: default;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 2147483000;
+}
+.macos-launch:hover { background: #fff; }
+.macos-launch-ic { display: flex; }
+.macos-launch-ic svg { width: 15px; height: 15px; display: block; }
+.macos-overlay-root { position: fixed; inset: 0; pointer-events: none; z-index: 25; }
+.macos-overlay-root > * { pointer-events: auto; }
+
+/* small screens (phone remote control) */
+@media (max-width: 760px) {
+  .macos-menu-item.hide-sm, .macos-date.hide-sm { display: none; }
+  .macos-desktop { --mac-menubar-h: 24px; --mac-dock-h: 62px; }
+  .macos-desktop-area {
+    top: calc(var(--mac-menubar-h) + 8px);
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--mac-dock-h) + 8px);
+    grid-template-rows: repeat(auto-fill, 84px);
+    grid-auto-columns: 84px;
+  }
+  .macos-icon-cell { width: 84px; height: 82px; }
+  .macos-icon-img, .macos-icon-img svg { width: 52px; height: 52px; }
+  .macos-dock { height: 50px; gap: 5px; padding: 4px 6px 5px; border-radius: 15px; }
+  .macos-dock-item, .macos-dock-item .dock-icon, .macos-dock-item .dock-icon svg { width: 40px; height: 40px; }
+  .macos-dock-item.hover { transform: scale(1.1); }
+  .macos-dock-item.hover-adj { transform: none; }
+  .macos-menu { min-width: 190px; }
+  .macos-launch { right: 10px; bottom: 10px; height: 24px; width: 40px; }
+  .macos-launch:hover { width: 40px; }
+}
+
+/* ---------------- desktop apps: plugin surfaces floated into windows ---------------- */
+/* a right-bar seat is only a carrier: its body is floated into the desktop window by inline
+   geometry, so the native seat itself never paints */
+/* the desktop replaces the conversation and the workspace sidebar: no native left column.
+   The park moves the frame by its margin box, so no transform / containment may sit on an
+   ancestor of a floated node or the float would be laid out against an off-screen box. */
+html[data-macos-desktop] [class*="_sidebarCol"]:not([data-macos-float-code]):not([data-macos-float-notes]) { display: none !important; }
+html[data-macos-desktop] .macos-window-body.hole { background: transparent; pointer-events: none; }
+html[data-macos-desktop] .macos-app-void { flex: 1; display: flex; align-items: center; justify-content: center; background: #fff; }
+html[data-macos-desktop] .macos-app-void.ready { background: transparent; }
+html[data-macos-desktop] .macos-void-inner { text-align: center; color: #6b6b70; font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+html[data-macos-desktop] .macos-term { flex: 1; display: flex; flex-direction: column; background: #1e1e20; color: #eaeaea; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+html[data-macos-desktop] .macos-term-out { flex: 1; overflow: auto; padding: 10px 14px; }
+html[data-macos-desktop] .macos-term-line { margin: 0 0 2px; white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+html[data-macos-desktop] .macos-term-line.cmd { color: #9ad3ff; }
+html[data-macos-desktop] .macos-term-hint { opacity: .55; }
+html[data-macos-desktop] .macos-term-in { display: flex; gap: 8px; align-items: center; border-top: 1px solid #333; padding: 8px 14px; }
+html[data-macos-desktop] .macos-term-in input { flex: 1; background: transparent; border: 0; outline: 0; color: #fff; font: inherit; }
+html[data-macos-desktop] .macos-term-prompt { color: #7ee787; }
+
+html[data-macos-desktop] .macos-finder { flex: 1; display: flex; min-height: 0; }
+html[data-macos-desktop] .macos-finder-side { width: 190px; background: rgba(246,246,248,.96); border-right: 1px solid rgba(0,0,0,.08); overflow: auto; padding: 8px 6px; }
+html[data-macos-desktop] .macos-finder-side-head { font-size: 11px; font-weight: 600; color: #8a8a8f; padding: 10px 10px 4px; }
+html[data-macos-desktop] .macos-finder-side-row { padding: 4px 10px; border-radius: 6px; cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-macos-desktop] .macos-finder-side-row.on { background: rgba(0,122,255,.14); }
+html[data-macos-desktop] .macos-finder-side-row.sub { padding-left: 20px; font-size: 12px; }
+html[data-macos-desktop] .macos-finder-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+html[data-macos-desktop] .macos-finder-path { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(0,0,0,.07); font-size: 12px; color: #555; }
+html[data-macos-desktop] .macos-finder-crumb { cursor: default; }
+html[data-macos-desktop] .macos-finder-grid { flex: 1; overflow: auto; padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; align-content: start; }
+html[data-macos-desktop] .macos-finder-item { display: flex; flex-direction: column; align-items: center; gap: 6px; background: transparent; border: 0; padding: 8px 4px; border-radius: 8px; cursor: default; }
+html[data-macos-desktop] .macos-finder-item:hover { background: rgba(0,0,0,.05); }
+html[data-macos-desktop] .macos-finder-ic svg { width: 40px; height: 40px; }
+html[data-macos-desktop] .macos-finder-ext { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 8px; background: #e8e8ed; color: #666; font-size: 10px; text-transform: uppercase; }
+html[data-macos-desktop] .macos-finder-name { font-size: 11.5px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-macos-desktop] .macos-finder-err { color: #b00020; font-size: 12px; padding: 8px 14px; }
+
+html[data-macos-desktop] .macos-office { flex: 1; display: flex; min-height: 0; }
+html[data-macos-desktop] .macos-office-side { width: 200px; border-right: 1px solid rgba(0,0,0,.08); background: rgba(246,246,248,.96); overflow: auto; padding: 6px; }
+html[data-macos-desktop] .macos-office-empty { padding: 10px; font-size: 12px; color: #777; line-height: 1.5; }
+html[data-macos-desktop] .macos-office-main { flex: 1; min-width: 0; }
+html[data-macos-desktop] .macos-office-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+html[data-macos-desktop] .macos-office-hint { padding: 24px; color: #777; }
+
+html[data-macos-desktop] .macos-settings { flex: 1; overflow: auto; padding: 18px 22px; }
+html[data-macos-desktop] .macos-settings h3 { margin: 18px 0 6px; font-size: 13px; }
+html[data-macos-desktop] .macos-settings-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.05); }
+html[data-macos-desktop] .macos-settings-name { flex: 1; }
+html[data-macos-desktop] .macos-settings-kind { font-size: 11px; color: #888; }
+html[data-macos-desktop] .macos-btn.sm { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; }
+
+/* ---------- software windows hosting a plugin page ---------- */
+.macos-pane { position: relative; flex: 1 1 auto; min-height: 0; display: flex; background: #fff; }
+.macos-pane-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.macos-pane.loaded .macos-pane-frame { opacity: 1; }
+.macos-pane-wait {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #fff;
+  color: #1d1d1f;
+  font: 13px/1.5 var(--mac-font);
+}
+.macos-pane.loaded .macos-pane-wait { display: none; }
+.macos-tb-group { display: flex; align-items: center; gap: 4px; }
+
+/* a window whose content is the native panel: its body is a hole, the panel shows through */
+html[data-macos-desktop] .macos-window-body.hole { background: transparent !important; pointer-events: none !important; }
+html[data-macos-desktop] .macos-window.hole-win { background: transparent !important; }
+
+/* a pane-app window is chrome around the native panel, so it stacks above the other windows
+   (real z-index, not a stacking context: a blurred filter here would trap the panel's layers) */
+html[data-macos-desktop] .macos-window.hole-win { z-index: 520 !important; }
+html[data-macos-desktop] .macos-finder-folder svg { width: 40px; height: 40px; }
+html[data-macos-desktop] .macos-finder-crumb { cursor: default; color: #333; }
+html[data-macos-desktop] .macos-finder-crumb:hover { color: #0a6cff; }
+html[data-macos-desktop] .macos-finder-sep { color: #999; margin: 0 2px; }
+
+/* ---------- desktop browser window (second ego-lite Chromium, owned by the Host half) ---------- */
+html[data-macos-desktop] .macos-browser-app { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #fff; }
+html[data-macos-desktop] .macos-browser-bar {
+  display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+  background: #f2f2f4; border-bottom: 1px solid rgba(0,0,0,.09);
+}
+html[data-macos-desktop] .macos-browser-btn {
+  width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent;
+  font-size: 15px; line-height: 1; color: #444; cursor: default;
+}
+html[data-macos-desktop] .macos-browser-btn:hover { background: rgba(0,0,0,.07); }
+html[data-macos-desktop] .macos-browser-url { flex: 1; display: flex; }
+html[data-macos-desktop] .macos-browser-url input {
+  flex: 1; height: 24px; border: 1px solid rgba(0,0,0,.12); border-radius: 6px;
+  background: #fff; padding: 0 8px; font-size: 12px; font-family: inherit; color: #222; outline: none;
+}
+html[data-macos-desktop] .macos-browser-url input:focus { border-color: rgba(0,122,255,.6); box-shadow: 0 0 0 3px rgba(0,122,255,.18); }
+html[data-macos-desktop] .macos-browser-view { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fff; }
+html[data-macos-desktop] .macos-browser-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; background: #fff; }
+html[data-macos-desktop] .macos-browser-status {
+  height: 24px; display: flex; align-items: center; padding: 0 12px;
+  font-size: 11.5px; color: #6d6d72; background: #f7f7f8; border-top: 1px solid rgba(0,0,0,.07);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+html[data-macos-desktop] .macos-desktop.dark .macos-browser-bar { background: #2a2a2c; border-bottom-color: rgba(255,255,255,.08); }
+html[data-macos-desktop] .macos-desktop.dark .macos-browser-status { background: #232325; color: #a0a0a5; border-top-color: rgba(255,255,255,.07); }
+
+/* ---------- browser window: the real ego tabs, one picture per tab ---------- */
+html[data-macos-desktop] .macos-browser-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 10px 0;
+  min-height: 34px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--mac-titlebar-bg, rgba(255, 255, 255, 0.72));
+  backdrop-filter: var(--mac-card-blur, saturate(180%) blur(24px));
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.08);
+}
+html[data-macos-desktop] .macos-browser-tabs::-webkit-scrollbar { display: none; }
+html[data-macos-desktop] .macos-browser-tab {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-width: 96px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.62);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+html[data-macos-desktop] .macos-browser-tab:hover { background: rgba(0, 0, 0, 0.05); }
+html[data-macos-desktop] .macos-browser-tab.on { background: rgba(255, 255, 255, 0.92); color: rgba(0, 0, 0, 0.88); box-shadow: 0 -0.5px 0 rgba(0, 0, 0, 0.08), 0.5px 0 0 rgba(0, 0, 0, 0.06), -0.5px 0 0 rgba(0, 0, 0, 0.06); }
+html[data-macos-desktop] .macos-browser-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-macos-desktop] .macos-browser-tab-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: #34c759; }
+html[data-macos-desktop] .macos-desktop.dark .macos-browser-tabs { background: rgba(38, 38, 40, 0.72); border-bottom-color: rgba(255, 255, 255, 0.08); }
+html[data-macos-desktop] .macos-desktop.dark .macos-browser-tab { color: rgba(255, 255, 255, 0.62); }
+html[data-macos-desktop] .macos-desktop.dark .macos-browser-tab.on { background: rgba(58, 58, 60, 0.92); color: rgba(255, 255, 255, 0.9); }
+
+/* ---------- floating assistant ("精灵球") ---------- */
+/* Closed, every app is ordinary software: the orb is the only sign the agent is around. */
+/* the orb must clear the window's own chrome: the window body is a stacking context in some apps,
+   so the orb lives directly on the window and floats above every layer of it */
+.macos-window .macos-orb-wrap { position: absolute; right: 16px; bottom: 16px; z-index: 2147482000;  display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.macos-orb {
+  width: 34px; height: 34px; border-radius: 50%; border: 0.5px solid rgba(255, 255, 255, 0.55);
+  background: radial-gradient(circle at 32% 28%, #ffffff 0%, #e9ecf5 42%, #c3c9dd 100%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.macos-orb:hover { transform: scale(1.08); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), 0 1px 2px rgba(0, 0, 0, 0.14); }
+.macos-orb.on { transform: scale(0.94); }
+.macos-orb-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: conic-gradient(from 210deg, #4c8dff, #7a5cff 35%, #ff5ea8 65%, #ffb34c 85%, #4c8dff 100%);
+  box-shadow: 0 0 8px rgba(122, 92, 255, 0.55), inset 0 0 4px rgba(255, 255, 255, 0.6);
+  animation: macos-orb-breathe 3.2s ease-in-out infinite;
+}
+@keyframes macos-orb-breathe { 0%, 100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+.macos-orb-panel {
+  width: 320px; max-height: 380px; display: flex; flex-direction: column;
+  border-radius: 14px; overflow: hidden;
+  background: var(--mac-card-bg, rgba(255, 255, 255, 0.82));
+  -webkit-backdrop-filter: var(--mac-card-blur, saturate(180%) blur(24px));
+  backdrop-filter: var(--mac-card-blur, saturate(180%) blur(24px));
+  border: 0.5px solid rgba(0, 0, 0, 0.12);
+  box-shadow: var(--mac-win-shadow, 0 18px 48px rgba(0, 0, 0, 0.24));
+}
+.macos-orb-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 0.5px solid rgba(0, 0, 0, 0.08); }
+.macos-orb-title { font-size: 12.5px; font-weight: 600; color: #1d1d1f; }
+.macos-orb-close { border: 0; background: transparent; font-size: 15px; line-height: 1; color: rgba(0, 0, 0, 0.45); cursor: pointer; padding: 2px 4px; }
+.macos-orb-log { flex: 1; min-height: 60px; max-height: 240px; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.macos-orb-hint { font-size: 12px; color: rgba(0, 0, 0, 0.45); line-height: 1.5; }
+.macos-orb-msg { display: flex; flex-direction: column; gap: 5px; }
+.macos-orb-you { align-self: flex-end; max-width: 92%; padding: 6px 9px; border-radius: 12px 12px 4px 12px; background: #0a84ff; color: #fff; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; }
+.macos-orb-reply { align-self: flex-start; max-width: 96%; padding: 7px 10px; border-radius: 12px 12px 12px 4px; background: rgba(0, 0, 0, 0.055); color: #1d1d1f; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+.macos-orb-input { display: flex; gap: 6px; align-items: flex-end; padding: 8px 10px 10px; border-top: 0.5px solid rgba(0, 0, 0, 0.08); }
+.macos-orb-input textarea { flex: 1; resize: none; border: 0.5px solid rgba(0, 0, 0, 0.14); border-radius: 9px; padding: 6px 8px; font: inherit; font-size: 12.5px; background: rgba(255, 255, 255, 0.9); color: #1d1d1f; outline: none; }
+.macos-orb-input textarea:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18); }
+.macos-orb-send { border: 0; border-radius: 9px; background: #0a84ff; color: #fff; font-size: 12px; padding: 7px 11px; cursor: pointer; }
+.macos-orb-send:disabled { opacity: 0.55; cursor: default; }
+.macos-window.dark .macos-orb { background: radial-gradient(circle at 32% 28%, #f4f6fb 0%, #d7dcea 45%, #9aa2b8 100%); }
+.macos-window.dark .macos-orb-title, .macos-window.dark .macos-orb-reply { color: #f5f5f7; }
+.macos-window.dark .macos-orb-reply { background: rgba(255, 255, 255, 0.1); }
+.macos-window.dark .macos-orb-input textarea { background: rgba(255, 255, 255, 0.08); color: #f5f5f7; border-color: rgba(255, 255, 255, 0.18); }
+
+/* ---------- notes window ---------- */
+.macos-notes { display: flex; height: 100%; min-height: 0; background: #fbfbfd; }
+.macos-notes-side { width: 210px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; overflow: auto; border-right: 0.5px solid rgba(0, 0, 0, 0.08); background: rgba(246, 246, 249, 0.9); }
+.macos-notes-dir { font-size: 11px; color: rgba(0, 0, 0, 0.42); padding: 2px 8px 6px; cursor: pointer; }
+.macos-notes-item { text-align: left; border: 0; background: transparent; border-radius: 7px; padding: 6px 9px; font-size: 12.5px; color: #1d1d1f; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.macos-notes-item:hover { background: rgba(0, 0, 0, 0.055); }
+.macos-notes-item.on { background: rgba(10, 132, 255, 0.14); color: #0a5bd0; }
+.macos-notes-item.dir { color: rgba(0, 0, 0, 0.6); }
+.macos-notes-main { flex: 1; min-width: 0; display: flex; }
+.macos-notes-editor { flex: 1; border: 0; outline: none; resize: none; padding: 18px 22px; font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color: #1d1d1f; background: #fff; }
+.macos-notes-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 13px; color: rgba(0, 0, 0, 0.4); padding: 24px; text-align: center; }
+.macos-desktop.dark .macos-notes { background: #1e1e20; }
+.macos-desktop.dark .macos-notes-side { background: rgba(38, 38, 41, 0.9); border-color: rgba(255, 255, 255, 0.08); }
+.macos-desktop.dark .macos-notes-item { color: #f2f2f4; }
+.macos-desktop.dark .macos-notes-editor { background: #232326; color: #f2f2f4; }
+
+/* ---------- terminal window ---------- */
+.macos-term { display: flex; flex-direction: column; height: 100%; background: rgba(20, 20, 22, 0.96); color: #e8e8ea; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.macos-term-log { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; }
+.macos-term-line.cmd { color: #7ee787; }
+.macos-term-line.sys { color: rgba(232, 232, 234, 0.45); }
+.macos-term-line.err { color: #ff7b72; }
+.macos-term-input { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; border-top: 0.5px solid rgba(255, 255, 255, 0.12); }
+.macos-term-prompt { color: #7ee787; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.macos-term-input input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #f2f2f4; font: inherit; }
+
+/* ---------- Chrome-style browser window ---------- */
+.macos-browser-app { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #dee1e6; }
+.macos-chrome-tabs { display: flex; align-items: flex-end; gap: 2px; padding: 7px 8px 0; overflow-x: auto; scrollbar-width: none; }
+.macos-chrome-tabs::-webkit-scrollbar { display: none; }
+.macos-chrome-tab { display: flex; align-items: center; gap: 7px; min-width: 120px; max-width: 220px; height: 32px; padding: 0 8px 0 10px; border-radius: 9px 9px 0 0; background: rgba(255, 255, 255, 0.45); font-size: 12px; color: #3c4043; cursor: default; user-select: none; }
+.macos-chrome-tab.on { background: #fff; box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06), 1px 0 0 rgba(0, 0, 0, 0.06), -1px 0 0 rgba(0, 0, 0, 0.06); }
+.macos-chrome-favicon { width: 16px; height: 16px; flex: none; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: #fff; background: linear-gradient(160deg, #8ab4f8, #1a73e8); }
+.macos-chrome-tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.macos-chrome-tab-close { flex: none; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: #5f6368; font-size: 13px; line-height: 1; cursor: pointer; }
+.macos-chrome-tab-close:hover { background: rgba(0, 0, 0, 0.08); }
+.macos-chrome-newtab { flex: none; width: 26px; height: 26px; margin-bottom: 3px; border: 0; border-radius: 50%; background: transparent; color: #3c4043; font-size: 16px; cursor: pointer; }
+.macos-chrome-newtab:hover { background: rgba(0, 0, 0, 0.08); }
+.macos-chrome-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: #fff; border-bottom: 0.5px solid rgba(0, 0, 0, 0.12); }
+.macos-chrome-btn { width: 28px; height: 28px; flex: none; border: 0; border-radius: 50%; background: transparent; color: #3c4043; font-size: 15px; line-height: 1; cursor: pointer; }
+.macos-chrome-btn:hover { background: rgba(0, 0, 0, 0.07); }
+.macos-chrome-omnibox { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: #f1f3f4; }
+.macos-chrome-omnibox.editing { background: #fff; box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.5); }
+.macos-chrome-lock { font-size: 10px; color: #5f6368; flex: none; }
+.macos-chrome-omnibox input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 12.5px; color: #202124; }
+.macos-chrome-omnibox-hint { flex: none; max-width: 30%; font-size: 11px; color: rgba(0, 0, 0, 0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.macos-browser-view { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fff; outline: none; display: flex; align-items: center; justify-content: center; }
+.macos-browser-view.has-frame { align-items: flex-start; justify-content: flex-start; }
+.macos-browser-frame { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top center; cursor: default; }
+.macos-browser-status { flex: none; height: 22px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 11px; color: rgba(0, 0, 0, 0.5); background: #f1f3f4; border-top: 0.5px solid rgba(0, 0, 0, 0.1); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.macos-desktop.dark .macos-browser-app { background: #26282c; }
+.macos-desktop.dark .macos-chrome-tab { background: rgba(255, 255, 255, 0.08); color: #c9ccd1; }
+.macos-desktop.dark .macos-chrome-tab.on { background: #35363a; color: #f1f3f4; }
+.macos-desktop.dark .macos-chrome-bar { background: #35363a; border-color: rgba(255, 255, 255, 0.1); }
+.macos-desktop.dark .macos-chrome-omnibox { background: #202124; }
+.macos-desktop.dark .macos-chrome-omnibox input { color: #e8eaed; }
+.macos-desktop.dark .macos-browser-status { background: #202124; color: rgba(255, 255, 255, 0.5); border-color: rgba(255, 255, 255, 0.1); }
+
+
+/* ---------- browser window: real ego viewport under Chrome chrome ---------- */
+.macos-browser-app { background: transparent !important; }
+.macos-browser-hole { position: relative; flex: 1; min-height: 0; pointer-events: auto; background: transparent; cursor: default; }
+.macos-browser-hole:focus { outline: none; }
+.macos-browser-hole > .macos-browser-frame { pointer-events: auto; }
+.macos-browser-hole > .macos-app-void { pointer-events: none; }
+.macos-window-body.hole .macos-browser-app > .macos-chrome-tabs,
+.macos-window-body.hole .macos-browser-app > .macos-chrome-bar,
+.macos-window-body.hole .macos-browser-app > .macos-browser-status { pointer-events: auto; }
+.macos-window-body.hole .macos-browser-status { margin-top: 0; }
+/* inside the window the panel is a bare viewport: its own toolbars belong to the desktop chrome */
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-head"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-pageinfo"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-tabs"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-statusline"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-actionline"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-livebadge"] { display: none !important; }
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-root"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-body"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+}
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-liveview"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-stage"] {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="ego-side-livebox"] {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  aspect-ratio: auto !important;
+  background: #fff !important;
+  border-radius: 0 !important;
+}
+html[data-macos-desktop] [data-sidebar-right-panel] img[class*="ego-side-liveimg"] {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: top center !important;
+  border: 0 !important;
+}
+
+/* the floated panel is a bare viewport: its own header (tab chips) belongs to the desktop chrome */
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="_tabHostHeader"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="_tabStrip"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="_tabstrip"],
+html[data-macos-desktop] [data-sidebar-right-panel] [class*="_stripTabs"] { display: none !important; }
+html[data-macos-desktop] [data-sidebar-right-panel] { border-radius: 0 !important; }
+
+/* ================================================================= *
+ *  访达 / 终端 / 设置 — the three apps rebuilt on real content
+ * ================================================================= */
+
+/* wallpapers: three built-ins, chosen in 设置 */
+html[data-macos-desktop][data-macos-wallpaper="aurora"] .macos-wallpaper {
+  background-image: linear-gradient(150deg, #04121f 0%, #0b3a52 28%, #17708a 55%, #5fc2b7 78%, #d6f4e6 100%) !important;
+}
+html[data-macos-desktop][data-macos-wallpaper="graphite"] .macos-wallpaper {
+  background-image: linear-gradient(160deg, #23262c 0%, #3a3f47 38%, #5a616b 68%, #8d949e 100%) !important;
+}
+html[data-macos-desktop][data-macos-wallpaper="graphite"] .macos-wallpaper-tint { opacity: .25 !important; }
+
+/* dock scaling from 设置 */
+html[data-macos-desktop] .macos-dock { transform: scale(var(--mac-dock-scale, 1)); transform-origin: bottom center; }
+
+/* ---- 访达 ---- */
+html[data-macos-desktop] .macos-finder-side { width: 200px; font: 13px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: rgba(244, 245, 247, .82); -webkit-backdrop-filter: var(--mac-card-blur); backdrop-filter: var(--mac-card-blur); }
+html[data-macos-desktop] .macos-finder-side-title { font-size: 11px; font-weight: 600; color: #86868b; padding: 10px 10px 5px; }
+html[data-macos-desktop] .macos-finder-side-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; font-size: 12.5px; text-align: left; cursor: default;
+}
+html[data-macos-desktop] .macos-finder-side-row:hover { background: rgba(0, 0, 0, .05); }
+html[data-macos-desktop] .macos-finder-side-row.on { background: rgba(0, 122, 255, .16); }
+html[data-macos-desktop] .macos-finder-side-ic { display: flex; width: 16px; height: 16px; }
+html[data-macos-desktop] .macos-finder-side-ic svg { width: 16px; height: 16px; }
+
+/* --- Finder: the titlebar IS the toolbar, exactly like macOS --- */
+html[data-macos-desktop] .macos-window.app-finder .macos-titlebar { height: 52px; padding-left: 20px; gap: 14px; }
+html[data-macos-desktop] .macos-titlebar-head { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+html[data-macos-desktop] .macos-finder-nav { display: flex; align-items: center; gap: 2px; }
+html[data-macos-desktop] .macos-finder-tool {
+  display: flex; align-items: center; justify-content: center; width: 28px; height: 26px;
+  border: 0; border-radius: 7px; background: transparent; color: #4a4a4f; cursor: default; padding: 0;
+}
+html[data-macos-desktop] .macos-finder-tool:hover:not(:disabled) { background: rgba(0, 0, 0, .06); }
+html[data-macos-desktop] .macos-finder-tool:active:not(:disabled) { background: rgba(0, 0, 0, .12); }
+html[data-macos-desktop] .macos-finder-tool:disabled { opacity: .28; }
+html[data-macos-desktop] .macos-finder-glyph { width: 16px; height: 16px; }
+html[data-macos-desktop] .macos-finder-actions { display: flex; align-items: center; gap: 10px; }
+html[data-macos-desktop] .macos-finder-seg { display: inline-flex; padding: 2px; gap: 1px; border-radius: 8px; background: rgba(0, 0, 0, .055); }
+html[data-macos-desktop] .macos-finder-seg-btn {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 22px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: #55555a; cursor: default;
+}
+html[data-macos-desktop] .macos-finder-seg-btn.on { background: #fff; color: #1d1d1f; box-shadow: 0 1px 2px rgba(0, 0, 0, .16); }
+html[data-macos-desktop] .macos-finder-searchwrap { position: relative; display: flex; align-items: center; }
+html[data-macos-desktop] .macos-finder-searchic { position: absolute; left: 7px; width: 12px; height: 12px; color: #86868b; pointer-events: none; }
+html[data-macos-desktop] .macos-finder-search {
+  width: 150px; height: 24px; padding: 0 8px 0 24px; border-radius: 7px;
+  border: .5px solid rgba(0, 0, 0, .16); background: #fff; color: #1d1d1f;
+  font: 12.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; outline: none;
+}
+html[data-macos-desktop] .macos-finder-search:focus { border-color: rgba(0, 122, 255, .7); box-shadow: 0 0 0 3px rgba(0, 122, 255, .18); }
+html[data-macos-desktop] .macos-finder-crumbbar {
+  display: flex; align-items: center; gap: 1px; height: 24px; padding: 0 14px;
+  border-bottom: .5px solid rgba(0, 0, 0, .08); background: rgba(250, 250, 252, .72); overflow: hidden;
+  font: 11.5px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+html[data-macos-desktop] .macos-finder-crumb { display: inline-flex; align-items: center; white-space: nowrap; }
+html[data-macos-desktop] .macos-finder-crumb-btn {
+  border: 0; background: transparent; color: #5c5c61; font: inherit; padding: 1px 4px; border-radius: 5px; cursor: default;
+}
+html[data-macos-desktop] .macos-finder-crumb-btn:hover { background: rgba(0, 0, 0, .06); color: #1d1d1f; }
+html[data-macos-desktop] .macos-finder-sep { color: #c0c0c5; font-size: 10px; margin: 0 1px; }
+html[data-macos-desktop] .macos-finder-note { padding: 6px 12px; font-size: 12px; color: #a35b00; background: rgba(255, 196, 92, .16); }
+html[data-macos-desktop] .macos-finder-body { flex: 1; min-height: 0; display: flex; background: #fff; }
+html[data-macos-desktop] .macos-finder-search, html[data-macos-desktop] .macos-finder-crumb-btn { outline: none; }
+
+html[data-macos-desktop] .macos-finder-grid {
+  flex: 1; min-width: 0; overflow: auto; padding: 16px 14px; display: grid; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px 6px;
+}
+html[data-macos-desktop] .macos-finder-item {
+  display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px 6px;
+  font: 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: default;
+}
+html[data-macos-desktop] .macos-finder-item:hover { background: rgba(0, 0, 0, .04); }
+html[data-macos-desktop] .macos-finder-item.on { background: rgba(0, 122, 255, .14); }
+html[data-macos-desktop] .macos-finder-ic { display: flex; align-items: center; justify-content: center; width: 56px; height: 48px; }
+html[data-macos-desktop] .macos-finder-folder { display: flex; }
+html[data-macos-desktop] .macos-finder-folder svg { width: 52px; height: 44px; }
+html[data-macos-desktop] .macos-finder-folder.sm svg { width: 18px; height: 16px; }
+html[data-macos-desktop] .macos-finder-ext {
+  display: flex; align-items: center; justify-content: center; width: 42px; height: 46px; border-radius: 6px;
+  background: linear-gradient(#fdfdfe, #eef0f4); border: 1px solid rgba(0, 0, 0, .12);
+  font-size: 9px; font-weight: 700; letter-spacing: .02em; color: #6b7280;
+}
+html[data-macos-desktop] .macos-finder-ext.sm { width: 18px; height: 20px; font-size: 7px; }
+html[data-macos-desktop] .macos-finder-name {
+  max-width: 100%; font-size: 12px; line-height: 1.25; text-align: center; color: #1d1d1f;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all;
+}
+
+html[data-macos-desktop] .macos-finder-list { flex: 1; min-width: 0; overflow: auto; }
+html[data-macos-desktop] .macos-finder-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 92px 138px; align-items: center; gap: 10px;
+  width: 100%; height: 26px; padding: 0 12px; border: 0; background: transparent; color: #1d1d1f;
+  font: 12.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; text-align: left; cursor: default;
+}
+html[data-macos-desktop] .macos-finder-row > span:nth-child(2),
+html[data-macos-desktop] .macos-finder-row > span:nth-child(3) { text-align: right; color: #6e6e73; font-size: 12px; }
+html[data-macos-desktop] .macos-finder-row.head { color: #86868b; font-size: 11px; border-bottom: .5px solid rgba(0, 0, 0, .1); background: rgba(250, 250, 252, .95); }
+html[data-macos-desktop] .macos-finder-row:not(.head):nth-child(even) { background: rgba(0, 0, 0, .018); }
+html[data-macos-desktop] .macos-finder-row.on { background: rgba(0, 122, 255, .16) !important; }
+html[data-macos-desktop] .macos-finder-row-name { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-macos-desktop] .macos-finder-row-ic { display: flex; align-items: center; }
+
+html[data-macos-desktop] .macos-finder-preview {
+  width: 340px; flex: none; border-left: 1px solid rgba(0, 0, 0, .08); display: flex; flex-direction: column;
+  background: #fbfbfd; min-height: 0;
+}
+html[data-macos-desktop] .macos-finder-preview-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px;
+  font-size: 12px; border-bottom: 1px solid rgba(0, 0, 0, .07);
+}
+html[data-macos-desktop] .macos-finder-preview-body {
+  flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 10px 12px;
+  font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #333;
+}
+html[data-macos-desktop] .macos-finder-status {
+  display: flex; align-items: center; justify-content: center; gap: 14px; height: 24px; padding: 0 12px;
+  font: 11px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: #86868b;
+  border-top: 1px solid rgba(0, 0, 0, .07); background: rgba(250, 250, 252, .92);
+}
+html[data-macos-desktop] .macos-finder-status-path { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 终端 ---- */
+html[data-macos-desktop] .macos-term-screen {
+  flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; background: #16161a; color: #e9e9ec;
+  outline: none; cursor: text;
+}
+html[data-macos-desktop] .macos-term-text {
+  margin: 0; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word;
+}
+html[data-macos-desktop] .macos-term-foot {
+  display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #101014; color: #9a9aa2;
+  border-top: 1px solid #2a2a30; font-size: 11px;
+}
+html[data-macos-desktop] .macos-term-screen:focus { box-shadow: inset 0 0 0 1px rgba(120, 170, 255, .35); }
+
+/* ---- 设置 ---- */
+html[data-macos-desktop] .macos-settings { flex: 1; display: flex; min-height: 0; background: #fff; }
+html[data-macos-desktop] .macos-settings-side {
+  width: 190px; flex: none; padding: 10px 8px; background: rgba(244, 245, 247, .85);
+  border-right: 1px solid rgba(0, 0, 0, .08); overflow: auto;
+}
+html[data-macos-desktop] .macos-settings-side-row { padding: 6px 10px; border-radius: 7px; font-size: 12.5px; color: #3a3a3f; }
+html[data-macos-desktop] .macos-settings-side-row.on { background: rgba(0, 122, 255, .16); color: #0a58c8; }
+html[data-macos-desktop] .macos-settings-main { flex: 1; min-width: 0; overflow: auto; padding: 16px 20px 24px; }
+html[data-macos-desktop] .macos-settings-section { margin: 0 0 18px; }
+html[data-macos-desktop] .macos-settings-section h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #6f6f76; }
+html[data-macos-desktop] .macos-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: rgba(0, 0, 0, .06); }
+html[data-macos-desktop] .macos-seg-btn {
+  border: 0; background: transparent; color: #3a3a3f; font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: default;
+}
+html[data-macos-desktop] .macos-seg-btn.on { background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .14); }
+html[data-macos-desktop] .macos-range { width: 220px; accent-color: #0a84ff; }
+html[data-macos-desktop] .macos-input {
+  width: 280px; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(0, 0, 0, .14);
+  background: #fff; color: inherit; font: inherit; font-size: 12.5px;
+}
+html[data-macos-desktop] .macos-about { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: #3a3a3f; }
+html[data-macos-desktop] .macos-about-name { font-size: 15px; font-weight: 600; color: #1c1c1e; margin-bottom: 4px; }
+html[data-macos-desktop] .macos-about-line { color: #6a6a70; font-size: 12px; }
+html[data-macos-desktop] .macos-settings-note { font-size: 12px; color: #8a8a8f; line-height: 1.6; }
+
+.macos-desktop.dark html[data-macos-desktop] .macos-finder-body,
+html[data-macos-desktop] .macos-desktop.dark .macos-finder-body { background: #1c1c1f; }
+
+/* ---- macOS window chrome metrics ----
+   28px titlebar, 12px traffic lights with 8px gaps and 20px leading, glyphs on hover of the group,
+   right-side controls on the same optical line as the lights. */
+html[data-macos-desktop] .macos-titlebar {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 12px 0 20px; box-sizing: border-box;
+}
+html[data-macos-desktop] .macos-lights { display: flex; align-items: center; gap: 8px; margin-right: 4px; }
+html[data-macos-desktop] .macos-light {
+  width: 12px; height: 12px; flex: none; padding: 0; border: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .14); cursor: default;
+}
+html[data-macos-desktop] .macos-light.close { background: #ff5f57; }
+html[data-macos-desktop] .macos-light.min { background: #febc2e; }
+html[data-macos-desktop] .macos-light.zoom { background: #28c840; }
+html[data-macos-desktop] .macos-window.blurred .macos-light { background: #d3d3d6; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .1); }
+html[data-macos-desktop] .macos-light-glyph { width: 12px; height: 12px; opacity: 0; color: rgba(0, 0, 0, .62); }
+html[data-macos-desktop] .macos-lights:hover .macos-light-glyph,
+html[data-macos-desktop] .macos-lights.on .macos-light-glyph { opacity: 0; }
+html[data-macos-desktop] .macos-lights:hover .macos-light-glyph { opacity: 1; }
+html[data-macos-desktop] .macos-title {
+  position: absolute; left: 50%; transform: translateX(-50%); max-width: 46%;
+  font: 600 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  color: #1d1d1f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
+html[data-macos-desktop] .macos-window.blurred .macos-title { color: #9a9aa0; }
+html[data-macos-desktop] .macos-titlebar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; min-height: 22px; }
+html[data-macos-desktop] .macos-window.app-finder .macos-title { max-width: 36%; }
+html[data-macos-desktop] .macos-window.app-finder .macos-titlebar-right { gap: 10px; }
+
+/* ---------- about this Mac (settings), macOS Sonoma proportions ---------- */
+.macos-about { padding: 6px 0 2px; }
+.macos-about-mark {
+  width: 56px; height: 56px; margin-bottom: 10px; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.14), 0 6px 16px rgba(0,0,0,.10);
+}
+.macos-about-mark svg { width: 100%; height: 100%; display: block; }
+.macos-about-name {
+  font-size: 20px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--mac-label); line-height: 1.2;
+}
+.macos-about-sub { font-size: 11px; color: var(--mac-label-2); margin-top: 2px; }
+.macos-about-spec {
+  margin: 14px 0 0; display: grid; gap: 6px; max-width: 420px;
+}
+.macos-about-spec-row {
+  display: grid; grid-template-columns: 72px 1fr; align-items: baseline; gap: 10px;
+  font-size: 13px;
+}
+.macos-about-spec-row dt { color: var(--mac-label-2); font-size: 11px; text-align: right; }
+.macos-about-spec-row dd { margin: 0; color: var(--mac-label); font-variant-numeric: tabular-nums; }
+.macos-about-actions { margin-top: 16px; display: flex; gap: 8px; }
+.macos-about-report {
+  margin-top: 12px; padding: 12px 14px; border-radius: 10px;
+  background: rgba(120,120,128,.08); display: grid; gap: 6px;
+  font-size: 11px; max-width: 560px;
+}
+.macos-about-report-row { display: grid; grid-template-columns: 68px 1fr; gap: 10px; align-items: baseline; }
+.macos-about-report-row span { color: var(--mac-label-2); text-align: right; }
+.macos-about-report-row code {
+  font-family: var(--mac-mono); color: var(--mac-label); word-break: break-all;
+}
+.macos-desktop.dark .macos-about-report { background: rgba(255,255,255,.07); }
+
+/* ---------- terminal block cursor ---------- */
+.macos-term-text { white-space: pre-wrap; word-break: break-word; }
+.macos-term-cursor {
+  display: inline-block; width: 7.4px; height: 15px; margin-left: 1px;
+  vertical-align: -2px; background: rgba(255,255,255,.86);
+  animation: macos-blink 1.06s steps(1, end) infinite;
+}
+@keyframes macos-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.macos-finder-status-path { display: none; }
+.macos-finder-status { justify-content: center; }
+
+/* settings sidebar rows are buttons: strip the UA chrome so they read as macOS list rows */
+.macos-settings-side-row {
+  appearance: none; -webkit-appearance: none; border: 0; margin: 0; width: 100%;
+  background: transparent; font: inherit; color: var(--mac-label);
+  text-align: left; padding: 5px 10px; border-radius: 6px; cursor: default;
+}
+.macos-settings-side-row:hover { background: rgba(120,120,128,.12); }
+.macos-settings-side-row.on { background: #0a84ff; color: #fff; }
+.macos-desktop.dark .macos-settings-side-row.on { background: #0a84ff; }
+.macos-about-actions .macos-btn {
+  flex: 0 0 auto; appearance: none; -webkit-appearance: none; border: 0;
+  padding: 5px 14px; border-radius: 6px; font: inherit; font-size: 12px;
+  background: rgba(120,120,128,.16); color: var(--mac-label); cursor: default;
+}
+.macos-about-actions .macos-btn:hover { background: rgba(120,120,128,.24); }
+
+/* ---------- settings: dock order list (drag to reorder) ---------- */
+.macos-dock-list { display: grid; gap: 4px; max-width: 420px; margin-top: 10px; }
+.macos-dock-list .macos-btn { width: auto; justify-self: start; appearance: none; -webkit-appearance: none;
+  border: 0; padding: 5px 14px; border-radius: 6px; font: inherit; font-size: 12px;
+  background: rgba(120,120,128,.16); color: var(--mac-label); cursor: default; }
+.macos-dock-list .macos-btn:hover { background: rgba(120,120,128,.24); }
+.macos-dock-row {
+  display: grid; grid-template-columns: 16px 26px 1fr auto; align-items: center; gap: 10px;
+  padding: 6px 10px; border-radius: 8px; background: rgba(120,120,128,.08);
+  font-size: 13px; color: var(--mac-label); cursor: grab;
+  transition: background .12s ease, transform .12s ease;
+}
+.macos-dock-row:hover { background: rgba(120,120,128,.14); }
+.macos-dock-row.dragging { opacity: .45; }
+.macos-dock-row.over { background: rgba(10,132,255,.14); box-shadow: inset 0 0 0 1px rgba(10,132,255,.5); }
+.macos-dock-row-grip { color: var(--mac-label-2); font-size: 11px; letter-spacing: -2px; }
+.macos-dock-row-icon { width: 26px; height: 26px; border-radius: 6px; overflow: hidden; display: block; }
+.macos-dock-row-icon svg { width: 100%; height: 100%; display: block; }
+.macos-dock-row-slot { color: var(--mac-label-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.macos-desktop.dark .macos-dock-row { background: rgba(255,255,255,.08); }
+.macos-desktop.dark .macos-dock-row:hover { background: rgba(255,255,255,.14); }
+
+/* ---------- office window: Univer viewer embedded next to its file list ---------- */
+html[data-macos-desktop] .macos-office-wrap { flex: 1; display: flex; min-height: 0; }
+html[data-macos-desktop] .macos-office-side {
+  width: 196px; flex: 0 0 196px; border-right: 0.5px solid rgba(0,0,0,.1);
+  background: rgba(246,246,248,.92); overflow: auto; padding: 8px 6px;
+}
+html[data-macos-desktop] .macos-office-side .macos-finder-side-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent;
+  font: inherit; font-size: 12.5px; color: #1d1d1f; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: default;
+}
+html[data-macos-desktop] .macos-office-side .macos-finder-side-row:hover { background: rgba(120,120,128,.12); }
+html[data-macos-desktop] .macos-office-side .macos-finder-side-row.on { background: #0a84ff; color: #fff; }
+html[data-macos-desktop] .macos-office-ext {
+  flex: 0 0 auto; font-size: 8px; font-weight: 700; letter-spacing: .04em;
+  padding: 1px 3px; border-radius: 3px; background: rgba(120,120,128,.18); color: inherit;
+}
+html[data-macos-desktop] .macos-office-main { flex: 1; min-width: 0; display: flex; background: #fff; }
+html[data-macos-desktop] .macos-office-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; flex: 1; }
+html[data-macos-desktop] .macos-desktop.dark .macos-office-side { background: rgba(40,40,44,.92); }
+
+/* ---------- notes window: Obsidian-like vault / list / editor ---------- */
+html[data-macos-desktop] .macos-notes { display: flex; flex: 1; min-height: 0; background: #fff; }
+html[data-macos-desktop] .macos-notes-side {
+  width: 232px; flex: 0 0 232px; border-right: 0.5px solid rgba(0,0,0,.1);
+  background: rgba(246,246,248,.94); overflow: auto; padding: 8px 8px 12px;
+}
+html[data-macos-desktop] .macos-notes-vault {
+  display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+  font-size: 13px; font-weight: 600; color: var(--mac-label);
+}
+html[data-macos-desktop] .macos-notes-vault-ic {
+  width: 17px; height: 17px; flex: 0 0 17px; border-radius: 4px; overflow: hidden; display: block;
+}
+html[data-macos-desktop] .macos-notes-vault-ic svg { width: 100%; height: 100%; display: block; }
+html[data-macos-desktop] .macos-notes-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  width: 100%; border: 0; background: transparent; font: inherit; font-size: 12.5px;
+  color: var(--mac-label); text-align: left; padding: 6px 9px; border-radius: 7px; cursor: default;
+}
+html[data-macos-desktop] .macos-notes-item:hover { background: rgba(120,120,128,.12); }
+html[data-macos-desktop] .macos-notes-item.on { background: #0a84ff; color: #fff; }
+html[data-macos-desktop] .macos-notes-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-macos-desktop] .macos-notes-item-date { flex: 0 0 auto; font-size: 10px; opacity: .62; font-variant-numeric: tabular-nums; }
+html[data-macos-desktop] .macos-notes-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+html[data-macos-desktop] .macos-notes-doc { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 26px 10px; }
+html[data-macos-desktop] .macos-notes-doc-head {
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'title save' 'meta save';
+  align-items: center; gap: 2px 14px; padding-bottom: 12px; border-bottom: 0.5px solid rgba(0,0,0,.09);
+  margin-bottom: 14px;
+}
+html[data-macos-desktop] .macos-notes-title { grid-area: title; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; color: var(--mac-label); }
+html[data-macos-desktop] .macos-notes-meta { grid-area: meta; font-size: 11px; color: var(--mac-label-2); font-variant-numeric: tabular-nums; }
+html[data-macos-desktop] .macos-notes-doc-head .macos-btn { grid-area: save; }
+html[data-macos-desktop] .macos-btn {
+  appearance: none; -webkit-appearance: none; border: 0; font: inherit; font-size: 12px;
+  padding: 5px 14px; border-radius: 6px; background: rgba(120,120,128,.16); color: var(--mac-label); cursor: default;
+}
+html[data-macos-desktop] .macos-btn:hover { background: rgba(120,120,128,.24); }
+html[data-macos-desktop] .macos-btn:disabled { opacity: .45; }
+html[data-macos-desktop] .macos-notes-editor {
+  flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent;
+  font-family: var(--mac-mono); font-size: 13px; line-height: 1.72; color: var(--mac-label);
+}
+html[data-macos-desktop] .macos-notes-preview { flex: 1; min-height: 0; overflow: auto; }
+html[data-macos-desktop] .macos-notes-md-inner { max-width: 720px; font-size: 13.5px; line-height: 1.75; color: var(--mac-label); }
+html[data-macos-desktop] .macos-notes-md-inner h1 { font-size: 22px; font-weight: 600; margin: 4px 0 10px; }
+html[data-macos-desktop] .macos-notes-md-inner h2 { font-size: 17px; font-weight: 600; margin: 18px 0 8px; }
+html[data-macos-desktop] .macos-notes-md-inner h3 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+html[data-macos-desktop] .macos-notes-md-inner p { margin: 0 0 10px; }
+html[data-macos-desktop] .macos-notes-md-inner ul, html[data-macos-desktop] .macos-notes-md-inner ol { margin: 0 0 10px; padding-left: 22px; }
+html[data-macos-desktop] .macos-notes-md-inner li { margin: 2px 0; }
+html[data-macos-desktop] .macos-notes-md-inner blockquote {
+  margin: 0 0 10px; padding: 6px 12px; border-left: 3px solid rgba(10,132,255,.5);
+  background: rgba(120,120,128,.08); border-radius: 0 6px 6px 0; color: var(--mac-label-2);
+}
+html[data-macos-desktop] .macos-notes-md-inner code {
+  font-family: var(--mac-mono); font-size: 12px; background: rgba(120,120,128,.14);
+  padding: 1px 4px; border-radius: 4px;
+}
+html[data-macos-desktop] .macos-notes-md-inner table { border-collapse: collapse; margin: 0 0 12px; font-size: 12.5px; }
+html[data-macos-desktop] .macos-notes-md-inner th, html[data-macos-desktop] .macos-notes-md-inner td {
+  border: 0.5px solid rgba(0,0,0,.14); padding: 5px 10px; text-align: left;
+}
+html[data-macos-desktop] .macos-notes-md-inner th { background: rgba(120,120,128,.1); font-weight: 600; }
+html[data-macos-desktop] .macos-md-check {
+  display: inline-block; width: 11px; height: 11px; margin-right: 6px; border-radius: 3px;
+  border: 1px solid rgba(0,0,0,.28); vertical-align: -1px;
+}
+html[data-macos-desktop] .macos-md-check.on { background: #0a84ff; border-color: #0a84ff; }
+html[data-macos-desktop] .macos-notes-tags {
+  display: flex; gap: 6px; flex-wrap: wrap; padding-top: 10px; border-top: 0.5px solid rgba(0,0,0,.09); margin-top: 10px;
+}
+html[data-macos-desktop] .macos-notes-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(10,132,255,.12); color: #0a5bd6;
+}
+html[data-macos-desktop] .macos-empty-title { font-size: 15px; font-weight: 600; color: var(--mac-label); margin-top: 10px; }
+html[data-macos-desktop] .macos-empty-sub { font-size: 12px; color: var(--mac-label-2); margin-top: 6px; max-width: 320px; text-align: center; }
+html[data-macos-desktop] .macos-notes-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+html[data-macos-desktop] .macos-notes-empty .macos-icon-i { width: 64px; height: 64px; }
+html[data-macos-desktop] .macos-seg.sm .macos-seg-btn { padding: 2px 9px; font-size: 11.5px; }
+html[data-macos-desktop] .macos-input.sm { width: 168px; height: 24px; font-size: 12px; padding: 0 9px; }
+html[data-macos-desktop] .macos-tb-note { font-size: 11px; color: var(--mac-label-2); }
+html[data-macos-desktop] .macos-desktop.dark .macos-notes-side { background: rgba(40,40,44,.94); }
+html[data-macos-desktop] .macos-desktop.dark .macos-notes { background: #1e1e21; }
+
+/* ---------- spreadsheet view inside the Office window ---------- */
+html[data-macos-desktop] .macos-office-sheet-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #fff; }
+html[data-macos-desktop] .macos-sheet-toolbar {
+  display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+  border-bottom: 0.5px solid rgba(0,0,0,.1); font-size: 12px; color: var(--mac-label);
+}
+html[data-macos-desktop] .macos-sheet-toolbar .macos-btn { margin-left: auto; }
+html[data-macos-desktop] .macos-sheet-name { font-weight: 600; }
+html[data-macos-desktop] .macos-sheet { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+html[data-macos-desktop] .macos-sheet-formula {
+  display: flex; align-items: center; gap: 10px; padding: 4px 10px; font-size: 12px;
+  border-bottom: 0.5px solid rgba(0,0,0,.1); color: var(--mac-label);
+}
+html[data-macos-desktop] .macos-sheet-cellref {
+  min-width: 44px; font-variant-numeric: tabular-nums; color: var(--mac-label-2);
+}
+html[data-macos-desktop] .macos-sheet-fx { font-style: italic; color: var(--mac-label-2); }
+html[data-macos-desktop] .macos-sheet-value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-macos-desktop] .macos-sheet-grid { flex: 1; overflow: auto; font-size: 12.5px; }
+html[data-macos-desktop] .macos-sheet-row { display: grid; }
+html[data-macos-desktop] .macos-sheet-row.head { position: sticky; top: 0; z-index: 2; background: #f6f6f8; }
+html[data-macos-desktop] .macos-sheet-col, html[data-macos-desktop] .macos-sheet-corner {
+  padding: 4px 8px; font-size: 11px; color: var(--mac-label-2); text-align: center;
+  border-right: 0.5px solid rgba(0,0,0,.1); border-bottom: 0.5px solid rgba(0,0,0,.1);
+}
+html[data-macos-desktop] .macos-sheet-col.on { background: rgba(10,132,255,.14); color: #0a5bd6; }
+html[data-macos-desktop] .macos-sheet-rownum {
+  padding: 5px 8px; font-size: 11px; color: var(--mac-label-2); text-align: right;
+  border-right: 0.5px solid rgba(0,0,0,.1); border-bottom: 0.5px solid rgba(0,0,0,.1); background: #fafafb;
+}
+html[data-macos-desktop] .macos-sheet-cell {
+  padding: 5px 9px; border-right: 0.5px solid rgba(0,0,0,.07); border-bottom: 0.5px solid rgba(0,0,0,.07);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mac-label); cursor: cell;
+}
+html[data-macos-desktop] .macos-sheet-cell.num { text-align: right; font-variant-numeric: tabular-nums; }
+html[data-macos-desktop] .macos-sheet-cell.label { font-weight: 500; }
+html[data-macos-desktop] .macos-sheet-cell.sel { outline: 2px solid #0a84ff; outline-offset: -2px; background: rgba(10,132,255,.06); }
+html[data-macos-desktop] .macos-sheet-row.total .macos-sheet-cell { background: #f4f6ff; font-weight: 600; }
+html[data-macos-desktop] .macos-sheet-status {
+  display: flex; justify-content: space-between; padding: 4px 12px; font-size: 11px;
+  color: var(--mac-label-2); border-top: 0.5px solid rgba(0,0,0,.1); background: #fafafb;
+}
+html[data-macos-desktop] .macos-desktop.dark .macos-sheet-grid,
+html[data-macos-desktop] .macos-desktop.dark .macos-office-sheet-wrap { background: #1e1e21; }
+html[data-macos-desktop] .macos-desktop.dark .macos-sheet-row.head { background: #26262a; }
+
+/* the sheet must own the full window width: flex items default to min-content here */
+html[data-macos-desktop] .macos-office-sheet-wrap > .macos-sheet { flex: 1 1 auto; min-width: 0; width: 100%; }
+html[data-macos-desktop] .macos-sheet-grid { width: 100%; min-width: 0; }
+html[data-macos-desktop] .macos-sheet-row { width: 100%; }
+
+/* ---------- presentation view in the Office window ---------- */
+html[data-macos-desktop] .macos-deck { flex: 1; display: flex; min-height: 0; background: #f2f2f5; }
+html[data-macos-desktop] .macos-deck-rail {
+  width: 176px; flex: 0 0 176px; overflow: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 6px;
+  border-right: 0.5px solid rgba(0,0,0,.1); background: rgba(246,246,248,.94);
+}
+html[data-macos-desktop] .macos-deck-thumb {
+  display: flex; gap: 7px; align-items: flex-start; text-align: left; border: 0; background: #fff;
+  border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 11px; color: var(--mac-label);
+  box-shadow: 0 1px 2px rgba(0,0,0,.08); cursor: default; min-height: 52px;
+}
+html[data-macos-desktop] .macos-deck-thumb.on { outline: 2px solid #0a84ff; }
+html[data-macos-desktop] .macos-deck-thumb-no { color: var(--mac-label-2); font-variant-numeric: tabular-nums; }
+html[data-macos-desktop] .macos-deck-thumb-t { line-height: 1.35; }
+html[data-macos-desktop] .macos-deck-stage { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 18px 22px 10px; }
+html[data-macos-desktop] .macos-deck-slide {
+  flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.12);
+  padding: 44px 52px; display: flex; flex-direction: column; min-height: 0;
+}
+html[data-macos-desktop] .macos-deck-title { font-size: 30px; font-weight: 600; letter-spacing: -0.015em; color: #1d1d1f; }
+html[data-macos-desktop] .macos-deck-lines { margin: 22px 0 0; padding-left: 20px; font-size: 16px; line-height: 1.85; color: #3a3a3c; }
+html[data-macos-desktop] .macos-deck-brand { margin-top: auto; font-size: 11px; color: #9a9aa0; }
+html[data-macos-desktop] .macos-deck-nav { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 10px; font-size: 12px; color: var(--mac-label-2); }
+
+/* ---------- selection hygiene: chrome never looks "selected" blue ---------- */
+html[data-macos-desktop] .macos-desktop,
+html[data-macos-desktop] .macos-window,
+html[data-macos-desktop] .macos-titlebar,
+html[data-macos-desktop] .macos-dock,
+html[data-macos-desktop] .macos-menubar,
+html[data-macos-desktop] .macos-chrome-tabs,
+html[data-macos-desktop] .macos-chrome-bar,
+html[data-macos-desktop] .macos-browser-status,
+html[data-macos-desktop] .macos-browser-hole {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html[data-macos-desktop] ::selection { background: rgba(10, 132, 255, 0.25); color: inherit; }
+html[data-macos-desktop] .macos-term-text::selection,
+html[data-macos-desktop] .macos-notes-editor::selection,
+html[data-macos-desktop] .macos-notes-preview ::selection,
+html[data-macos-desktop] input::selection,
+html[data-macos-desktop] textarea::selection {
+  background: rgba(10, 132, 255, 0.35);
+}
+html[data-macos-desktop] .macos-browser-hole:focus,
+html[data-macos-desktop] .macos-browser-hole:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
