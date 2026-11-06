@@ -39,13 +39,13 @@ agent 住在这台机器里。它在自己的标签页里搜资料，把结论�
 ## 3. 市场卡片描述（英文，投资人语气 + 可核实事实）
 
 ```
-- [owner/macos-desktop](https://github.com/owner/macos-desktop) - Agent OS for DeepSeek Harness: the Web GUI becomes a real macOS desktop — Sonoma wallpaper, menu bar with a live clock, magnifying Dock, draggable windows with traffic lights — and the seven apps on it are not mock-ups. The browser is a real headless Chromium driven over CDP (parallel tabs, real mouse and keyboard, your logins intact). Office is the editable Univer gateway, so a cell you click is a cell that changes. Notes is your own Obsidian vault in ~/Documents. Finder is your workspace, Terminal is a persistent bash, Settings controls wallpaper, theme and Dock order. The agent is not a sidebar watching you: it opens windows, browses in its own tabs, writes into the note you are reading and adds the slide to the deck you have open, while the desktop stays scriptable through /api/macos-desktop/* and an in-page window.__macos surface. You keep the mouse; the agent keeps its own desk.
+- [Yue-Lyu123/dsh-as-macOS](https://github.com/Yue-Lyu123/dsh-as-macOS) - Agent OS for DeepSeek Harness: the Web GUI becomes a real macOS desktop — Sonoma wallpaper, menu bar with a live clock, magnifying Dock, draggable windows with traffic lights — and the seven apps on it are not mock-ups. The browser is a real headless Chromium driven over CDP (parallel tabs, real mouse and keyboard, your logins intact). Office is the editable Univer gateway, so a cell you click is a cell that changes. Notes is your own Obsidian vault in ~/Documents. Finder is your workspace, Terminal is a persistent bash, Settings controls wallpaper, theme and Dock order. The agent is not a sidebar watching you: it opens windows, browses in its own tabs, writes into the note you are reading and adds the slide to the deck you have open, while the desktop stays scriptable through /api/macos-desktop/* and an in-page window.__macos surface. You keep the mouse; the agent keeps its own desk.
 ```
 
 ## 4. 中文卡片描述
 
 ```
-- [owner/macos-desktop](https://github.com/owner/macos-desktop) - 给 DeepSeek Harness 装上 Agent OS：Web GUI 变成一台真正的 macOS 桌面——Sonoma 壁纸、带实时时钟的菜单栏、可放大的程序坞、带红黄绿灯的可拖动窗口——桌面上那七个软件都不是贴图。浏览器是真实的无头 Chromium（CDP 取帧、真实鼠标键盘、多标签并行、登录态照旧），Office 是可编辑的 Univer 网关（点哪个格就改哪个格），笔记直接读写你 `~/Documents` 里的 Obsidian 库，访达浏览工作区，终端维持常驻 bash，设置管壁纸、深浅色和程序坞顺序。agent 不是侧边栏里的旁观者：它自己开窗、在自己的标签里查资料、往你正在读的那篇笔记里写字、给你开着的演示文稿加一页；整个桌面通过 `/api/macos-desktop/*` 与页面内 `window.__macos` 对 agent 开放。鼠标留给你，工位归它。
+- [Yue-Lyu123/dsh-as-macOS](https://github.com/Yue-Lyu123/dsh-as-macOS) - 给 DeepSeek Harness 装上 Agent OS：Web GUI 变成一台真正的 macOS 桌面——Sonoma 壁纸、带实时时钟的菜单栏、可放大的程序坞、带红黄绿灯的可拖动窗口——桌面上那七个软件都不是贴图。浏览器是真实的无头 Chromium（CDP 取帧、真实鼠标键盘、多标签并行、登录态照旧），Office 是可编辑的 Univer 网关（点哪个格就改哪个格），笔记直接读写你 `~/Documents` 里的 Obsidian 库，访达浏览工作区，终端维持常驻 bash，设置管壁纸、深浅色和程序坞顺序。agent 不是侧边栏里的旁观者：它自己开窗、在自己的标签里查资料、往你正在读的那篇笔记里写字、给你开着的演示文稿加一页；整个桌面通过 `/api/macos-desktop/*` 与页面内 `window.__macos` 对 agent 开放。鼠标留给你，工位归它。
 ```
 
 ---

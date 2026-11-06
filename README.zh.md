@@ -127,7 +127,7 @@ macos-browser click 1 420 380       # 在某个标签里点真实鼠标
 ## 安装
 
 ```bash
-dsh plugin add macos-desktop
+dsh plugin add dsh-as-macos
 ```
 
 打开 Web GUI，点右下角的**桌面**胶囊，或者执行 `window.__macos.desktop(true)`。

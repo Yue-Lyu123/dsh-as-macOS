@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-macos-desktop',
+  id: 'dsh-as-macos',
   factory(require) {
     'use strict';
     const React = require('react');
