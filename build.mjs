@@ -39,4 +39,16 @@ for (const f of ['01-desktop.jpg', '02-windows.jpg', '03-apps.jpg', '04-launchpa
   if (existsSync(from)) copyFileSync(from, join(out, 'docs', f));
 }
 
-console.log('built', out, 'client.js bytes', js.length);
+// GitHub installs (`dsh plugin add github:…`) clone the repo root and read package.json there,
+// so the same built artefacts are mirrored to the root of the repository as well.
+for (const f of ['client.js', 'index.js', 'cordis.patch.yml', 'icon.svg']) {
+  writeFileSync(join(root, f), readFileSync(join(out, f)));
+}
+const localeSrc = join(src, 'locale', 'en.json');
+if (existsSync(localeSrc)) {
+  mkdirSync(join(root, 'locale'), { recursive: true });
+  copyFileSync(localeSrc, join(root, 'locale', 'en.json'));
+}
+writeFileSync(join(root, 'package.json'), readFileSync(join(out, 'package.json')));
+
+console.log('built', out, '+ repo root, client.js bytes', js.length);

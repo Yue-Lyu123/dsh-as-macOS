@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "macOS Desktop",
+    "description": "Turns the Harness Web GUI into a macOS-style desktop: wallpaper, menu bar with clock, desktop icons, a glass Dock, and draggable windows. Installed plugins appear as apps, and the ego-lite browser opens as a real window. Type /desktop in the composer to enter or exit."
+  }
+}
