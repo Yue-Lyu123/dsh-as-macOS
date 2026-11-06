@@ -23,6 +23,10 @@
 
 ![Real apps](docs/03-apps.jpg)
 
+![Launchpad](docs/04-launchpad.jpg)
+
+*Launchpad: every app, one blurred grid.*
+
 ---
 
 ## Why this is an OS, not another tool call

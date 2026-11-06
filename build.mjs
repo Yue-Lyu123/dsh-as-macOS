@@ -34,7 +34,7 @@ copyFileSync(join(root, 'README.md'), join(out, 'README.md'));
 copyFileSync(join(root, 'README.zh.md'), join(out, 'README.zh.md'));
 copyFileSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
 mkdirSync(join(out, 'docs'), { recursive: true });
-for (const f of ['01-desktop.jpg', '02-windows.jpg', '03-apps.jpg']) {
+for (const f of ['01-desktop.jpg', '02-windows.jpg', '03-apps.jpg', '04-launchpad.jpg']) {
   const from = join(root, 'docs', f);
   if (existsSync(from)) copyFileSync(from, join(out, 'docs', f));
 }

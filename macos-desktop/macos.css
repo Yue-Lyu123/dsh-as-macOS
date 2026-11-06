@@ -1974,7 +1974,7 @@ html[data-macos-desktop] .macos-browser-hole:focus-visible {
 html[data-macos-desktop][data-macos-chat='on'] [class*='_centerCol'] {
   position: fixed !important; left: 50% !important; top: 6vh !important;
   transform: translateX(-50%) !important;
-  width: min(820px, 92vw) !important; height: 78vh !important;
+  width: min(1040px, 88vw) !important; height: 80vh !important;
   z-index: 620 !important; border-radius: 14px; overflow: hidden;
   box-shadow: 0 26px 60px rgba(0, 0, 0, 0.32), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
   background: var(--dsw-alias-bg-base);
