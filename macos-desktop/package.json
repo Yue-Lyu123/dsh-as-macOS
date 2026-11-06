@@ -1,6 +1,6 @@
 {
   "name": "dsh-as-macos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Agent OS for DeepSeek Harness: a macOS desktop in the Web GUI — real Chromium browser, editable Univer, Obsidian notes, Finder, terminal, all agent-drivable.",
   "license": "MIT",
   "author": "Yue-Lyu123",
