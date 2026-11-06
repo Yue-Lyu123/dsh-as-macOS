@@ -154,6 +154,12 @@ Host routes (all require the `dsh-auth` cookie):
 
 ```bash
 dsh plugin add dsh-as-macos
+
+> npm package not published yet? Install straight from GitHub — same bundle, no registry needed:
+
+```sh
+dsh plugin add github:Yue-Lyu123/dsh-as-macOS
+```
 ```
 
 Open the Web GUI and click the **桌面** capsule in the bottom-right corner, or run

@@ -138,6 +138,12 @@ macos-browser click 1 420 380       # 在某个标签里点真实鼠标
 
 ```bash
 dsh plugin add dsh-as-macos
+
+> npm 还没发？可以直接从 GitHub 装，同一个包，不需要 registry：
+
+```sh
+dsh plugin add github:Yue-Lyu123/dsh-as-macOS
+```
 ```
 
 打开 Web GUI，点右下角的**桌面**胶囊，或者执行 `window.__macos.desktop(true)`。
