@@ -310,6 +310,10 @@ window.__ModuleLoader__.load({
       desktopSelected: null,
       egoStatus: 'idle',
       modal: null,
+      chat: false,        // native conversation floated over the desktop
+      launchpad: false,   // app grid (F4)
+      spotlight: false,   // ⌘Space search
+      control: false,     // control centre
     };
     let zSeq = 0;
     const listeners = new Set();
@@ -926,6 +930,12 @@ window.__ModuleLoader__.load({
           }, h('span', { className: 'macos-dot' + (s.egoStatus === 'ready' ? '' : ' warn') }), 'ego'),
           h('span', { className: 'macos-status-ic', title: '网络', 'data-macos-chrome': '1' }, h(WifiGlyph)),
           h('span', { className: 'macos-status-ic', title: '电池', 'data-macos-chrome': '1' }, h(BatteryGlyph)),
+          h('span', {
+            className: 'macos-status-ic',
+            title: '控制中心',
+            'data-macos-chrome': '1',
+            onPointerDown: (e) => { e.stopPropagation(); setOpen(null); setState({ control: !S.control, launchpad: false, spotlight: false }); },
+          }, h('span', { className: 'macos-cc-glyph' }, '◐')),
           h('span', { className: 'macos-date hide-sm', 'data-macos-chrome': '1' },
             (now.getMonth() + 1) + '月' + now.getDate() + '日 周' + ['日', '一', '二', '三', '四', '五', '六'][now.getDay()]),
           h('span', { className: 'macos-clock', 'data-macos-chrome': '1' }, pad2(now.getHours()) + ':' + pad2(now.getMinutes()))),
@@ -2391,12 +2401,189 @@ window.__ModuleLoader__.load({
           h('div', { className: 'macos-icon-cell-dot' + (s.windows[it.id] ? ' on' : '') }))));
     }
 
+    /* ---------- native conversation, floated over the desktop ---------- */
+    // The real DSH conversation lives in the shell frame, which we park by margin (never by
+    // transform) so a `position: fixed` child still resolves against the viewport. That lets us
+    // show the untouched conversation — composer, streaming, tool traces — without cloning it.
+    function ChatBubble() {
+      const s = useS();
+      return h('button', {
+        className: 'macos-bubble' + (s.chat ? ' on' : ''),
+        title: s.chat ? '收起对话（Esc）' : '和 agent 说话（⌘J）',
+        'data-macos-chat-toggle': '',
+        onPointerDown: (e) => { e.preventDefault(); e.stopPropagation(); setState({ chat: !S.chat, launchpad: false, control: false }); },
+      },
+        h('span', { className: 'macos-bubble-dot' }),
+        h(WhalesIcon, { className: 'macos-bubble-ic' }));
+    }
+
+    /* ---------- Launchpad (F4) ---------- */
+    function Launchpad() {
+      const s = useS();
+      const apps = orderedApps();
+      const [q, setQ] = React.useState('');
+      if (!s.launchpad) return null;
+      const list = apps.filter((a) => !q || a.label.toLowerCase().includes(q.toLowerCase()));
+      return h('div', {
+        className: 'macos-launchpad',
+        onPointerDown: (e) => { if (e.target === e.currentTarget) setState({ launchpad: false }); },
+      },
+        h('input', {
+          className: 'macos-launchpad-search', placeholder: '搜索', autoFocus: true, value: q,
+          onInput: (e) => setQ(e.target.value),
+          onKeyDown: (e) => { if (e.key === 'Escape') setState({ launchpad: false }); },
+        }),
+        h('div', { className: 'macos-launchpad-grid' },
+          list.map((a) => h('button', {
+            key: a.id, className: 'macos-launchpad-app',
+            onPointerDown: (e) => { e.preventDefault(); openApp(a.id); setState({ launchpad: false }); },
+          },
+            h('span', { className: 'macos-launchpad-ic' }, h(AppIcon, { name: a.icon })),
+            h('span', { className: 'macos-launchpad-label' }, a.label)))));
+    }
+
+    /* ---------- Spotlight (⌘Space) ---------- */
+    function Spotlight() {
+      const s = useS();
+      const [q, setQ] = React.useState('');
+      const [hits, setHits] = React.useState([]);
+      useEffect(() => {
+        if (!s.spotlight) { setQ(''); setHits([]); return undefined; }
+        if (!q.trim()) { setHits([]); return undefined; }
+        let alive = true;
+        const t = window.setTimeout(() => {
+          fetch('/api/macos-desktop/files?dir=' + encodeURIComponent('/工作区'), { cache: 'no-store', credentials: 'same-origin' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (!alive || !data) return;
+              const needle = q.trim().toLowerCase();
+              const files = (data.items || data.entries || []).filter((e) => e.name.toLowerCase().includes(needle)).slice(0, 8)
+                .map((e) => ({ kind: e.dir ? '文件夹' : '文件', label: e.name, rel: e.rel }));
+              const apps = orderedApps().filter((a) => a.label.toLowerCase().includes(needle))
+                .map((a) => ({ kind: '应用', label: a.label, app: a.id }));
+              setHits([...apps, ...files]);
+            })
+            .catch(() => {});
+        }, 180);
+        return () => { alive = false; window.clearTimeout(t); };
+      }, [q, s.spotlight]);
+      if (!s.spotlight) return null;
+      return h('div', { className: 'macos-spotlight-wrap', onPointerDown: (e) => { if (e.target === e.currentTarget) setState({ spotlight: false }); } },
+        h('div', { className: 'macos-spotlight' },
+          h('input', {
+            className: 'macos-spotlight-input', placeholder: 'Spotlight 搜索', autoFocus: true, value: q,
+            onInput: (e) => setQ(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Escape') setState({ spotlight: false });
+              if (e.key === 'Enter' && hits[0]) {
+                if (hits[0].app) openApp(hits[0].app);
+                else openApp('finder');
+                setState({ spotlight: false });
+              }
+            },
+          }),
+          hits.length ? h('div', { className: 'macos-spotlight-list' },
+            hits.map((hit, i) => h('button', {
+              key: i, className: 'macos-spotlight-row',
+              onPointerDown: (e) => { e.preventDefault(); if (hit.app) openApp(hit.app); else openApp('finder'); setState({ spotlight: false }); },
+            }, h('span', { className: 'macos-spotlight-kind' }, hit.kind), h('span', { className: 'macos-spotlight-label' }, hit.label)))) : null));
+    }
+
+    /* ---------- Control Centre ---------- */
+    function ControlCentre() {
+      const s = useS();
+      const [wifi, setWifi] = React.useState(true);
+      const [bt, setBt] = React.useState(true);
+      const [dnd, setDnd] = React.useState(false);
+      const [bright, setBright] = React.useState(82);
+      const [vol, setVol] = React.useState(46);
+      useEffect(() => {
+        document.documentElement.style.setProperty('--mac-brightness', String(1 - (100 - bright) / 260));
+      }, [bright]);
+      if (!s.control) return null;
+      const tile = (label, on, set, icon) => h('button', {
+        className: 'macos-cc-tile' + (on ? ' on' : ''),
+        onPointerDown: (e) => { e.preventDefault(); set(!on); },
+      }, h('span', { className: 'macos-cc-tile-ic' }, icon), h('span', { className: 'macos-cc-tile-label' }, label));
+      return h('div', { className: 'macos-cc', onPointerDown: (e) => e.stopPropagation() },
+        h('div', { className: 'macos-cc-grid' },
+          tile('Wi-Fi', wifi, setWifi, h(WifiGlyph, {})),
+          tile('蓝牙', bt, setBt, h('span', { className: 'macos-cc-glyph' }, '✳')),
+          tile('勿扰', dnd, setDnd, h('span', { className: 'macos-cc-glyph' }, '☾'))),
+        h('label', { className: 'macos-cc-row' }, h('span', {}, '亮度'),
+          h('input', { type: 'range', min: 20, max: 100, value: bright, onInput: (e) => setBright(Number(e.target.value)) })),
+        h('label', { className: 'macos-cc-row' }, h('span', {}, '声音'),
+          h('input', { type: 'range', min: 0, max: 100, value: vol, onInput: (e) => setVol(Number(e.target.value)) })),
+        h('div', { className: 'macos-cc-foot' }, (loadSettings().theme === 'dark' ? '深色' : '浅色') + ' · ' + new Date().toLocaleDateString('zh-CN')));
+    }
+
+    /* ---------- Sonoma desktop widgets ---------- */
+    // Mission Control: shrink every open window into a grid so you can pick one (F3)
+    function toggleMission() {
+      const ids = Object.keys(S.windows || {});
+      if (!ids.length) return;
+      if (S.mission) {
+        const saved = S.__missionSaved || {};
+        const windows = Object.assign({}, S.windows);
+        Object.keys(saved).forEach((id) => { if (windows[id]) windows[id] = Object.assign({}, windows[id], saved[id]); });
+        setState({ windows, mission: false, __missionSaved: null });
+        return;
+      }
+      const v = vp();
+      const n = ids.length;
+      const cols = Math.min(3, n);
+      const rows = Math.ceil(n / cols);
+      const cw = Math.floor((v.w - 80 - (cols - 1) * 24) / cols);
+      const ch = Math.floor((v.h - 150 - (rows - 1) * 24) / rows);
+      const windows = Object.assign({}, S.windows);
+      const saved = {};
+      ids.forEach((id, i) => {
+        const w = windows[id];
+        if (!w) return;
+        saved[id] = { x: w.x, y: w.y, w: w.w, h: w.h };
+        windows[id] = Object.assign({}, w, {
+          x: 40 + (i % cols) * (cw + 24),
+          y: 40 + Math.floor(i / cols) * (ch + 24),
+          w: cw, h: ch, z: 10 + i,
+        });
+      });
+      setState({ windows, mission: true, __missionSaved: saved });
+    }
+
+    function WidgetStack() {
+      const s = useS();
+      const d = s.now || new Date();
+      const days = ['日', '一', '二', '三', '四', '五', '六'];
+      const first = new Date(d.getFullYear(), d.getMonth(), 1).getDay();
+      const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < first; i += 1) cells.push(null);
+      for (let i = 1; i <= dim; i += 1) cells.push(i);
+      return h('div', { className: 'macos-widgets' },
+        h('div', { className: 'macos-widget' },
+          h('div', { className: 'macos-widget-time' }, pad2(d.getHours()) + ':' + pad2(d.getMinutes())),
+          h('div', { className: 'macos-widget-sub' }, (d.getMonth() + 1) + '月' + d.getDate() + '日 周' + days[d.getDay()])),
+        h('div', { className: 'macos-widget' },
+          h('div', { className: 'macos-widget-head' }, (d.getMonth() + 1) + '月'),
+          h('div', { className: 'macos-widget-cal' },
+            ['日', '一', '二', '三', '四', '五', '六'].map((w) => h('span', { key: w, className: 'macos-widget-dow' }, w)),
+            cells.map((n, i) => h('span', { key: i, className: 'macos-widget-day' + (n === d.getDate() ? ' today' : '') }, n || '')))));
+    }
+
     function Desktop(props) {
       const s = useS();
       const dark = useDark();
       const mountRef = useRef(null);
       useEffect(() => {
         const onKey = (e) => {
+          // ⌘Space Spotlight / F4 Launchpad / ⌘J conversation / Esc closes the top layer
+          if (e.key === ' ' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            setState({ spotlight: !S.spotlight, chat: false, launchpad: false, control: false });
+            return;
+          }
+          if (e.key === 'F4') { e.preventDefault(); setState({ launchpad: !S.launchpad, spotlight: false, control: false }); return; }
+          if (e.key === 'F3') { e.preventDefault(); toggleMission(); return; }
           if ((e.metaKey || e.ctrlKey) && e.altKey) {
             if (e.key === 'q' || e.key === 'Q') { e.preventDefault(); quitDesktop(); }
             return;
@@ -2405,9 +2592,13 @@ window.__ModuleLoader__.load({
             if (e.key === '1') { e.preventDefault(); openApp('chat'); }
             else if (e.key === '2') { e.preventDefault(); openApp('browser'); }
             else if (e.key === '0') { e.preventDefault(); quitDesktop(); }
+            else if (e.key.toLowerCase() === 'j') { e.preventDefault(); setState({ chat: !S.chat, spotlight: false, launchpad: false, control: false }); }
             return;
           }
-          if (e.key === 'Escape' && S.modal) setState({ modal: null });
+          if (e.key === 'Escape') {
+            if (S.spotlight || S.launchpad || S.control || S.chat) { setState({ spotlight: false, launchpad: false, control: false, chat: false }); return; }
+            if (S.modal) setState({ modal: null });
+          }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
@@ -2415,15 +2606,25 @@ window.__ModuleLoader__.load({
       // the panel is glued to a window body by the 200ms reconcile tick (not per frame: this
       // machine is a Pi and a rAF loop here starves the page)
       useEffect(() => { syncPanelGeometry(); emit(); }, [s.windows, s.focused, s.minimized, s.zoomed]);
+      // the native conversation is floated by CSS while the desktop bubble is open
+      useEffect(() => {
+        document.documentElement.setAttribute('data-macos-chat', s.chat ? 'on' : 'off');
+        return () => document.documentElement.removeAttribute('data-macos-chat');
+      }, [s.chat]);
       const open = s.order.filter((id) => s.windows[id]);
       return h('div', { className: 'macos-desktop' + (dark ? ' dark' : '') },
         h('div', { className: 'macos-wallpaper', style: { backgroundImage: 'url("' + WALLPAPER + '")' } }),
         h('div', { className: 'macos-wallpaper-tint' }),
         h(Menubar, { key: 'mb' }),
+        h(WidgetStack, { key: 'widgets' }),
         h(DesktopIcons, { key: 'icons' }),
         h('div', { className: 'macos-windows', key: 'wins' },
           open.map((id) => h(AppWindow, { key: id, appId: id }))),
         h(Dock, { key: 'dock' }),
+        h(ChatBubble, { key: 'bubble' }),
+        h(Launchpad, { key: 'launchpad' }),
+        h(Spotlight, { key: 'spotlight' }),
+        h(ControlCentre, { key: 'cc' }),
         h('div', { ref: mountRef, style: { display: 'none' } }),
         h(AboutSheet, { key: 'sheet' }));
     }

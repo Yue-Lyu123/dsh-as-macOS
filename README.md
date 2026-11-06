@@ -59,6 +59,12 @@ desktop is simply the most honest UI for what is already true.
 | **Finder** (访达) | your workspace: grid/list views, breadcrumbs, text preview |
 | **Terminal** (终端) | a persistent bash session with a blinking cursor |
 | **Settings** (设置) | wallpaper, light/dark, Dock order, browser start page, "About This Mac" |
+| **Desktop assistant** | a floating orb at the bottom-right opens the **native DSH conversation** as a floating panel (`⌘J`, `Esc` to close) |
+| **Launchpad** (`F4`) | every installed app in one blurred grid, with search |
+| **Spotlight** (`⌘Space`) | search apps *and* workspace files; `Enter` opens |
+| **Control Centre** | menu-bar `◐`: Wi-Fi / Bluetooth / Do Not Disturb tiles, brightness (really dims the desktop) and volume |
+| **Desktop widgets** | Sonoma-style clock and month calendar, top right |
+| **Mission Control** (`F3`) | shrink all windows into a grid, press again to restore |
 
 Every window carries a floating **assistant orb**: leave it closed and the app behaves
 like normal software; open it and you ask a question about *that app's* state.
